@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.backends.legacy:build"
+
+[tool.pytest.ini_options]
+testpaths     = ["tests"]
+asyncio_mode  = "auto"
+addopts       = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["."]
+omit   = ["tests/*", "*/site-packages/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "if __name__ == .__main__.:",
+    "pragma: no cover",
+]

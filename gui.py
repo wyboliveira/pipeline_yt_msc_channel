@@ -1,93 +1,702 @@
 """
 gui.py
-Interface gráfica do pipeline OvxrNight — CustomTkinter.
+Interface web do pipeline OvxrNight — FastAPI + WebSocket + Tailwind CSS.
 
 Uso:
     python gui.py
 """
 
+import asyncio
+import json
 import os
 import shutil
+import signal
 import subprocess
 import threading
 import traceback
-import queue as _queue
+import webbrowser
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Callable
+from typing import Optional
 
-import customtkinter as ctk
-from PIL import Image
+import uvicorn
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-# ── Tema ──────────────────────────────────────────────────────────────────────
-ctk.set_appearance_mode("dark")
-ctk.set_default_color_theme("dark-blue")
+# ── HTML Template ─────────────────────────────────────────────────────────────
 
-# ── Cores ──────────────────────────────────────────────────────────────────────
-BG_APP     = "#0E1120"
-BG_PANEL   = "#151829"
-BG_CARD    = "#1C2138"
-BG_INPUT   = "#232840"
-BG_ROW     = "#181E35"
-BG_ROW_SEL = "#1E2A50"
-ACCENT     = "#7B5CF0"
-ACCENT_HOV = "#6A4EDA"
-TEXT_MAIN  = "#E2E8F0"
-TEXT_DIM   = "#8892A4"
-TEXT_GREEN = "#22C55E"
-TEXT_RED   = "#EF4444"
-TEXT_AMBER = "#F59E0B"
-BORDER     = "#252D48"
+HTML_TEMPLATE = r"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>OvxrNight Control Center</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        app:    '#0E1120',
+        panel:  '#151829',
+        card:   '#1C2138',
+        inp:    '#232840',
+        rowsel: '#1E2A50',
+        brd:    '#252D48',
+      }
+    }
+  }
+}
+</script>
+<style>
+*  { box-sizing: border-box; }
+body { margin:0; background:#0E1120; color:#E2E8F0; font-family:'Segoe UI',sans-serif; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
 
-# ── Fontes ─────────────────────────────────────────────────────────────────────
-F_TITLE  = ("Segoe UI", 19, "bold")
-F_H2     = ("Segoe UI", 14, "bold")
-F_BODY   = ("Segoe UI", 13, "bold")
-F_SMALL  = ("Segoe UI", 12, "bold")
-F_LABEL  = ("Segoe UI", 11, "bold")
-F_MONO   = ("Consolas", 10, "bold")
-F_BADGE  = ("Segoe UI", 10,  "bold")
-F_ACCENT = ("Segoe UI", 14, "bold")
+/* scrollbar */
+::-webkit-scrollbar        { width:5px; height:5px; }
+::-webkit-scrollbar-track  { background:#151829; }
+::-webkit-scrollbar-thumb  { background:#252D48; border-radius:3px; }
+::-webkit-scrollbar-thumb:hover { background:#7B5CF0; }
+
+/* buttons */
+.btn { display:inline-flex; align-items:center; justify-content:center; gap:6px;
+       border:none; border-radius:6px; font-weight:700; cursor:pointer;
+       transition:background 0.15s, opacity 0.15s, transform 0.1s; font-family:inherit; }
+.btn:hover:not(:disabled) { filter:brightness(1.12); }
+.btn:active:not(:disabled) { transform:scale(0.97); }
+.btn:disabled { opacity:0.4; cursor:not-allowed; pointer-events:none; }
+
+.btn-accent  { background:#7B5CF0; color:#fff; }
+.btn-green   { background:#0A6B52; color:#fff; }
+.btn-blue    { background:#1E4070; color:#fff; }
+.btn-red     { background:#7A1515; color:#fff; }
+.btn-neutral { background:#232840; color:#8892A4; }
+.btn-neutral:hover:not(:disabled) { background:#2A3255; color:#E2E8F0; }
+.btn-ghost   { background:transparent; color:#8892A4; border:1px solid #252D48; }
+.btn-ghost:hover:not(:disabled) { background:#232840; color:#E2E8F0; }
+
+/* inputs */
+input, textarea {
+  background:#232840; border:1px solid #252D48; color:#E2E8F0;
+  border-radius:6px; padding:7px 10px; width:100%; outline:none;
+  font-family:inherit; font-size:13px; transition:border-color 0.15s;
+}
+input:focus, textarea:focus { border-color:#7B5CF0; }
+textarea { resize:vertical; }
+input::placeholder, textarea::placeholder { color:#4A5568; }
+
+/* track rows */
+.track-row {
+  display:flex; align-items:center; gap:6px; padding:0 10px;
+  height:44px; border-radius:4px; cursor:pointer;
+  background:#181E35; transition:background 0.12s;
+  border-left:3px solid transparent;
+}
+.track-row:hover { background:#1E2A50; }
+.track-row.active { background:#1E2A50; border-left-color:#7B5CF0; }
+
+/* step rows */
+.step-row {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:9px 14px; border-radius:4px; transition:background 0.2s;
+}
+.step-row.running { background:#1E2A50; }
+.step-row.done    { background:#0D2318; }
+.step-row.error   { background:#2A0D0D; }
+
+/* badge */
+.badge {
+  display:inline-flex; align-items:center; padding:2px 9px;
+  border-radius:4px; font-size:11px; font-weight:700; white-space:nowrap;
+}
+
+/* log */
+.log-line { font-family:Consolas,monospace; font-size:11.5px; line-height:1.5; white-space:pre-wrap; word-break:break-all; color:#8892A4; }
+
+/* section title */
+.sec { color:#7B5CF0; font-size:11px; font-weight:700; letter-spacing:0.12em; text-transform:uppercase; }
+
+/* divider */
+.hr { border:none; border-top:1px solid #252D48; margin:8px 0; }
+
+/* panels */
+.left-panel  { width:288px; min-width:288px; border-right:1px solid #252D48; background:#151829; display:flex; flex-direction:column; overflow:hidden; }
+.right-panel { width:300px; min-width:300px; border-left:1px solid #252D48; background:#151829; display:flex; flex-direction:column; overflow:hidden; }
+.center { flex:1; overflow:hidden; display:flex; flex-direction:column; }
+</style>
+</head>
+<body>
+
+<!-- ── Title bar ─────────────────────────────────────────────────────────── -->
+<div style="background:#151829; border-bottom:1px solid #252D48; padding:10px 18px; display:flex; align-items:center; gap:10px; flex-shrink:0;">
+  <span style="color:#7B5CF0;font-weight:900;font-size:13px;letter-spacing:.14em;">OVXRNIGHT</span>
+  <span style="color:#E2E8F0;font-weight:700;font-size:15px;flex:1;">Control Center</span>
+  <button class="btn btn-neutral" style="height:28px;padding:0 12px;font-size:12px;" onclick="shutdownApp()" title="Encerrar aplicação">⏻ Encerrar</button>
+  <span id="ws-badge" class="badge" style="background:#0D2318;color:#22C55E;font-size:11px;">● CONNECTED</span>
+</div>
+
+<!-- ── Main layout ────────────────────────────────────────────────────────── -->
+<div style="flex:1;display:flex;overflow:hidden;">
+
+  <!-- LEFT ────────────────────────────────────────────────────────────────── -->
+  <div class="left-panel">
+
+    <!-- Queue header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 8px;">
+      <span class="sec">Queue Management</span>
+      <button class="btn btn-neutral" style="width:26px;height:26px;font-size:14px;padding:0;" title="Configurações">⚙</button>
+    </div>
+
+    <!-- Inbox card -->
+    <div style="margin:0 10px 6px;background:#1C2138;border-radius:8px;padding:10px 12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <span id="inbox-count" style="color:#E2E8F0;font-size:12px;font-weight:700;">INBOX</span>
+        <span style="color:#8892A4;font-size:16px;letter-spacing:2px;">···</span>
+      </div>
+      <div style="color:#8892A4;font-size:11px;margin-top:2px;">Ordenado do mais antigo</div>
+    </div>
+
+    <!-- Add file button -->
+    <div style="padding:0 10px 6px;">
+      <button class="btn btn-ghost" style="width:100%;height:32px;font-size:12px;" onclick="pickFile()">
+        📂 Adicionar arquivo ao inbox
+      </button>
+    </div>
+
+    <!-- Queue list -->
+    <div id="queue-list" style="flex:1;overflow-y:auto;padding:0 10px;display:flex;flex-direction:column;gap:3px;"></div>
+
+    <hr class="hr" style="margin:8px 10px;"/>
+
+    <!-- Real-Time Log -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:0 16px 6px;">
+      <span class="sec">Real-Time Log</span>
+      <button class="btn btn-neutral" style="height:24px;padding:0 10px;font-size:11px;" onclick="clearLog()">Limpar</button>
+    </div>
+    <div id="log-box" style="flex:0 0 220px;overflow-y:auto;margin:0 10px 10px;padding:8px 10px;background:#1C2138;border:1px solid #252D48;border-radius:8px;display:flex;flex-direction:column;gap:1px;"></div>
+  </div>
+
+  <!-- CENTER ───────────────────────────────────────────────────────────────── -->
+  <div class="center">
+
+    <!-- Workspace header -->
+    <div style="padding:16px 20px 10px;flex-shrink:0;">
+      <div class="sec" style="margin-bottom:4px;">Active Workspace</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <div id="song-title" style="color:#E2E8F0;font-size:20px;font-weight:700;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+          Nenhum arquivo selecionado
+        </div>
+        <button id="btn-start" class="btn btn-accent" style="height:36px;padding:0 20px;font-size:13px;flex-shrink:0;" disabled onclick="startPipeline()">▶ Iniciar Pipeline</button>
+      </div>
+    </div>
+
+    <!-- Cards area -->
+    <div style="flex:1;overflow-y:auto;padding:0 12px 12px;">
+
+      <!-- Row 1: Metadata + Image -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+
+        <!-- Metadata card -->
+        <div style="background:#1C2138;border-radius:10px;padding:16px;">
+          <div class="sec" style="margin-bottom:12px;">Metadata Edit</div>
+
+          <div style="margin-bottom:10px;">
+            <div style="color:#8892A4;font-size:11px;font-weight:700;margin-bottom:5px;">TITLE</div>
+            <div style="display:flex;gap:8px;">
+              <input id="inp-title" type="text" placeholder="Artista - Nome da Música" style="flex:1;"/>
+              <button id="btn-confirm-inline" class="btn btn-accent" style="height:35px;padding:0 12px;font-size:12px;flex-shrink:0;" disabled onclick="confirmTitle()">Confirm Title</button>
+            </div>
+          </div>
+
+          <div style="margin-bottom:10px;">
+            <div style="color:#8892A4;font-size:11px;font-weight:700;margin-bottom:5px;">DESCRIPTION</div>
+            <textarea id="inp-desc" rows="4" placeholder="Descrição do vídeo..."></textarea>
+          </div>
+
+          <div style="margin-bottom:14px;">
+            <div style="color:#8892A4;font-size:11px;font-weight:700;margin-bottom:5px;">TAGS</div>
+            <input id="inp-tags" type="text" placeholder="slowed, reverb, anime, ..."/>
+          </div>
+
+          <button id="btn-confirm-full" class="btn btn-accent" style="width:100%;height:40px;font-size:13px;" disabled onclick="confirmTitle()">Confirm Title</button>
+        </div>
+
+        <!-- Image card -->
+        <div style="background:#1C2138;border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:10px;">
+          <div class="sec">Image Review</div>
+
+          <!-- Preview -->
+          <div id="img-area" style="background:#232840;border-radius:8px;height:190px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;">
+            <span id="img-placeholder" style="color:#8892A4;font-size:13px;">Aguardando geração da imagem...</span>
+            <img id="img-el" src="" alt="preview" style="display:none;width:100%;height:100%;object-fit:contain;"/>
+          </div>
+
+          <!-- Prompt info -->
+          <div>
+            <div style="color:#8892A4;font-size:11px;font-weight:700;margin-bottom:4px;">Prompt Elements:</div>
+            <div id="img-char"  style="color:#8892A4;font-size:12px;">Character: —</div>
+            <div id="img-scene" style="color:#8892A4;font-size:12px;">Scene: —</div>
+            <div id="img-style" style="color:#8892A4;font-size:12px;">Style: —</div>
+          </div>
+
+          <!-- Image action buttons -->
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin-top:auto;">
+            <button id="btn-img-ok"  class="btn btn-green" style="height:36px;font-size:12px;" disabled onclick="imgDecision('s')">Aprovar</button>
+            <button id="btn-img-new" class="btn btn-blue"  style="height:36px;font-size:12px;" disabled onclick="imgDecision('n')">Nova Imagem</button>
+            <button id="btn-img-del" class="btn btn-red"   style="height:36px;font-size:12px;" disabled onclick="imgDecision('d')">Descartar</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Row 2: Video card -->
+      <div style="background:#1C2138;border-radius:10px;padding:16px;">
+        <div class="sec" style="margin-bottom:12px;">Video Preview</div>
+        <div style="display:grid;grid-template-columns:3fr 2fr;gap:14px;">
+
+          <!-- Left: player -->
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div id="vid-area" style="background:#232840;border-radius:8px;height:148px;display:flex;align-items:center;justify-content:center;">
+              <span id="vid-placeholder" style="color:#8892A4;font-size:13px;">Aguardando vídeo...</span>
+            </div>
+            <!-- Progress bar -->
+            <div style="background:#232840;border-radius:3px;height:4px;overflow:hidden;">
+              <div id="vid-progress" style="background:#7B5CF0;height:100%;width:0%;transition:width 0.4s;"></div>
+            </div>
+            <!-- Controls -->
+            <div style="display:flex;align-items:center;gap:6px;">
+              <button class="btn btn-neutral" style="width:32px;height:30px;font-size:13px;padding:0;" onclick="openVideo()">▶</button>
+              <button class="btn btn-neutral" style="width:30px;height:30px;font-size:13px;padding:0;">⏸</button>
+              <button class="btn btn-neutral" style="width:30px;height:30px;font-size:13px;padding:0;">⏭</button>
+              <div style="flex:1;"></div>
+              <button class="btn btn-neutral" style="width:30px;height:30px;font-size:13px;padding:0;">🔊</button>
+              <button class="btn btn-neutral" style="width:30px;height:30px;font-size:13px;padding:0;">⛶</button>
+            </div>
+          </div>
+
+          <!-- Right: publish actions -->
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div id="vid-name" style="color:#8892A4;font-size:12px;word-break:break-all;min-height:32px;">—</div>
+            <button class="btn btn-neutral" style="height:32px;font-size:12px;" onclick="openReview()">📁 Abrir /review</button>
+            <div style="flex:1;"></div>
+            <button id="btn-publish" class="btn btn-accent" style="height:40px;font-size:13px;" disabled onclick="vidDecision('s')">▶ Publicar no YouTube</button>
+            <button id="btn-reject"  class="btn btn-red"    style="height:34px;font-size:12px;" disabled onclick="vidDecision('n')">✗ Descartar Vídeo</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT ───────────────────────────────────────────────────────────────── -->
+  <div class="right-panel">
+
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;">
+      <span class="sec">Pipeline Monitoring</span>
+      <span style="color:#8892A4;font-size:16px;">ⓘ</span>
+    </div>
+
+    <!-- Task status card -->
+    <div style="margin:0 10px 10px;background:#1C2138;border-radius:8px;overflow:hidden;">
+      <div style="padding:8px 14px 4px;color:#8892A4;font-size:11px;font-weight:700;">TASK STATUS</div>
+      <div id="step-0" class="step-row">
+        <span style="font-size:13px;font-weight:600;">1. Metadata</span>
+        <span class="badge" style="background:#1E2340;color:#8892A4;">PENDING</span>
+      </div>
+      <div id="step-1" class="step-row">
+        <span style="font-size:13px;font-weight:600;">2. Image</span>
+        <span class="badge" style="background:#1E2340;color:#8892A4;">PENDING</span>
+      </div>
+      <div id="step-2" class="step-row">
+        <span style="font-size:13px;font-weight:600;">3. Video</span>
+        <span class="badge" style="background:#1E2340;color:#8892A4;">PENDING</span>
+      </div>
+      <div id="step-3" class="step-row">
+        <span style="font-size:13px;font-weight:600;">4. Upload</span>
+        <span class="badge" style="background:#1E2340;color:#8892A4;">PENDING</span>
+      </div>
+      <div style="height:6px;"></div>
+    </div>
+
+    <!-- History -->
+    <hr class="hr" style="margin:4px 10px 8px;"/>
+    <div style="padding:0 16px 8px;">
+      <span class="sec">History</span>
+    </div>
+
+    <!-- Published -->
+    <div style="padding:0 14px 5px;">
+      <span style="color:#22C55E;font-size:11px;font-weight:700;letter-spacing:.08em;">PUBLISHED</span>
+    </div>
+    <div id="hist-pub" style="flex:1;overflow-y:auto;padding:0 10px 6px;display:flex;flex-direction:column;gap:2px;"></div>
+
+    <!-- Rejected -->
+    <div style="padding:6px 14px 5px;">
+      <span style="color:#EF4444;font-size:11px;font-weight:700;letter-spacing:.08em;">REJECTED</span>
+    </div>
+    <div id="hist-rej" style="flex:0 0 110px;overflow-y:auto;padding:0 10px 12px;display:flex;flex-direction:column;gap:2px;"></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" style="display:none;position:fixed;bottom:20px;right:20px;z-index:9999;max-width:340px;background:#1C2138;border:1px solid #252D48;border-radius:12px;padding:14px 18px;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
+  <div id="toast-title" style="font-weight:700;font-size:13px;margin-bottom:4px;"></div>
+  <div id="toast-msg" style="color:#8892A4;font-size:12px;word-break:break-all;"></div>
+</div>
+
+<script>
+// ── State ────────────────────────────────────────────────────────────────────
+let ws = null;
+let reconnectTimer = null;
+let currentVideoPath = null;
+let selectedIndex = 0;
+let queueItems = [];
+
+// ── WebSocket ─────────────────────────────────────────────────────────────────
+function connect() {
+  ws = new WebSocket('ws://' + location.host + '/ws');
+  ws.onopen  = () => { setWsBadge(true);  clearTimeout(reconnectTimer); loadQueue(); loadHistory(); };
+  ws.onclose = () => { setWsBadge(false); reconnectTimer = setTimeout(connect, 2500); };
+  ws.onerror = () => ws.close();
+  ws.onmessage = e => { const m = JSON.parse(e.data); (handlers[m.type] || (() => {}))(m); };
+}
+
+function wsSend(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+}
+
+function setWsBadge(ok) {
+  const el = document.getElementById('ws-badge');
+  el.textContent  = ok ? '● CONNECTED' : '● OFFLINE';
+  el.style.background = ok ? '#0D2318' : '#2A0D0D';
+  el.style.color      = ok ? '#22C55E' : '#EF4444';
+}
+
+// ── Message handlers ──────────────────────────────────────────────────────────
+const handlers = {
+  log(m)           { appendLog(m.msg); },
+  step(m)          { setStep(m.index, m.status); },
+  meta_ready(m)    { onMetaReady(m); },
+  img_ready(m)     { onImgReady(m); },
+  vid_ready(m)     { onVidReady(m); },
+  done_ok(m)       { onDoneOk(m.url); },
+  done_ko(m)       { onDoneKo(m.msg); },
+  queue_update(m)  { renderQueue(m.items); },
+  history_update(m){ renderHistory(m.published, m.rejected); },
+};
+
+// ── Log ────────────────────────────────────────────────────────────────────────
+function appendLog(msg) {
+  const box = document.getElementById('log-box');
+  const ts  = new Date().toTimeString().slice(0,8);
+  const el  = document.createElement('div');
+  el.className = 'log-line';
+  el.textContent = '[' + ts + '] ' + msg;
+  box.appendChild(el);
+  box.scrollTop = box.scrollHeight;
+}
+function clearLog() { document.getElementById('log-box').innerHTML = ''; }
+
+// ── Steps ──────────────────────────────────────────────────────────────────────
+const STEP_CFG = {
+  idle:    { cls:'',        badge:'PENDING', bg:'#1E2340', col:'#8892A4', lc:'#8892A4' },
+  running: { cls:'running', badge:'ACTIVE',  bg:'#7B5CF0', col:'#ffffff', lc:'#E2E8F0' },
+  done:    { cls:'done',    badge:'OK',      bg:'#0A3D20', col:'#22C55E', lc:'#E2E8F0' },
+  error:   { cls:'error',   badge:'ERROR',   bg:'#4A1010', col:'#EF4444', lc:'#EF4444' },
+};
+function setStep(i, status) {
+  const row = document.getElementById('step-' + i);
+  if (!row) return;
+  const cfg = STEP_CFG[status] || STEP_CFG.idle;
+  row.className = 'step-row ' + cfg.cls;
+  row.querySelector('.badge').textContent   = cfg.badge;
+  row.querySelector('.badge').style.background = cfg.bg;
+  row.querySelector('.badge').style.color      = cfg.col;
+  row.querySelector('span:first-child').style.color = cfg.lc;
+}
+
+// ── Queue ──────────────────────────────────────────────────────────────────────
+async function loadQueue() {
+  const r = await fetch('/api/queue');
+  const d = await r.json();
+  renderQueue(d.items);
+}
+function renderQueue(items) {
+  queueItems = items;
+  if (selectedIndex >= items.length) selectedIndex = 0;
+
+  const list = document.getElementById('queue-list');
+  list.innerHTML = '';
+  document.getElementById('inbox-count').textContent =
+    'INBOX  (' + items.length + (items.length === 1 ? ' Track' : ' Tracks') + ')';
+
+  if (items.length === 0) {
+    document.getElementById('song-title').textContent = 'Inbox vazia';
+    document.getElementById('song-title').style.color = '#8892A4';
+    document.getElementById('btn-start').disabled = true;
+    return;
+  }
+
+  items.forEach((item, i) => {
+    const row = document.createElement('div');
+    const isActive = i === selectedIndex;
+    row.className = 'track-row' + (isActive ? ' active' : '');
+    const stem = item.stem.length > 26 ? item.stem.slice(0,24) + '…' : item.stem;
+    row.innerHTML =
+      '<span style="color:' + (isActive ? '#7B5CF0' : '#8892A4') + ';font-size:14px;flex-shrink:0;">♪</span>' +
+      '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:600;color:' + (isActive ? '#E2E8F0' : '#8892A4') + ';">' +
+        String(i+1).padStart(2,'0') + '. ' + stem + '</span>' +
+      '<span style="color:#8892A4;font-size:11px;flex-shrink:0;">' + item.date + '</span>';
+    row.onclick = () => selectTrack(i);
+    list.appendChild(row);
+  });
+
+  updateWorkspaceTitle();
+  document.getElementById('btn-start').disabled = false;
+}
+
+function selectTrack(i) {
+  selectedIndex = i;
+  renderQueue(queueItems);
+}
+
+function updateWorkspaceTitle() {
+  if (!queueItems.length) return;
+  const stem = queueItems[selectedIndex].stem;
+  const titleEl = document.getElementById('song-title');
+  titleEl.textContent = stem.length > 58 ? stem.slice(0,56) + '…' : stem;
+  titleEl.style.color = '#E2E8F0';
+}
+
+// ── History ────────────────────────────────────────────────────────────────────
+async function loadHistory() {
+  const r = await fetch('/api/history');
+  const d = await r.json();
+  renderHistory(d.published, d.rejected);
+}
+function renderHistory(pub, rej) {
+  const pubEl = document.getElementById('hist-pub');
+  pubEl.innerHTML = '';
+  pub.forEach(n => {
+    const el = document.createElement('div');
+    el.style.cssText = 'font-size:12px;color:#22C55E;background:#0D2318;border-radius:4px;padding:4px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    el.title = n;
+    el.textContent = n;
+    pubEl.appendChild(el);
+  });
+  const rejEl = document.getElementById('hist-rej');
+  rejEl.innerHTML = '';
+  rej.forEach(n => {
+    const el = document.createElement('div');
+    el.style.cssText = 'font-size:12px;color:#EF4444;background:#2A0D0D;border-radius:4px;padding:4px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    el.title = n;
+    el.textContent = '♪  ' + n;
+    rejEl.appendChild(el);
+  });
+}
+
+// ── Pipeline actions ───────────────────────────────────────────────────────────
+function startPipeline() {
+  if (document.getElementById('btn-start').disabled) return;
+  if (!queueItems.length) return;
+  resetUI();
+  wsSend({ type: 'start', index: selectedIndex });
+  document.getElementById('btn-start').disabled = true;
+  appendLog('Pipeline iniciado: ' + queueItems[selectedIndex].stem);
+}
+
+function confirmTitle() {
+  const titulo = document.getElementById('inp-title').value.trim();
+  wsSend({ type: 'confirm_titulo', titulo });
+  document.getElementById('btn-confirm-inline').disabled = true;
+  document.getElementById('btn-confirm-full').disabled   = true;
+  appendLog('Título confirmado: ' + (titulo || '(mantido)'));
+}
+
+function imgDecision(d) {
+  wsSend({ type: 'img_decision', decision: d });
+  ['btn-img-ok','btn-img-new','btn-img-del'].forEach(id =>
+    document.getElementById(id).disabled = true);
+  appendLog({ s:'Imagem aprovada.', n:'Gerando nova imagem...', d:'Descartado.' }[d] || '');
+}
+
+function vidDecision(d) {
+  wsSend({ type: 'vid_decision', decision: d });
+  document.getElementById('btn-publish').disabled = true;
+  document.getElementById('btn-reject').disabled  = true;
+  appendLog(d === 's' ? 'Publicando no YouTube...' : 'Vídeo rejeitado. Devolvendo áudio ao /inbox.');
+}
+
+// ── Server callbacks ──────────────────────────────────────────────────────────
+function onMetaReady(m) {
+  document.getElementById('inp-title').value = m.titulo    || '';
+  document.getElementById('inp-desc').value  = m.descricao || '';
+  document.getElementById('inp-tags').value  = Array.isArray(m.tags) ? m.tags.join(', ') : (m.tags || '');
+  document.getElementById('btn-confirm-inline').disabled = false;
+  document.getElementById('btn-confirm-full').disabled   = false;
+  appendLog('Metadados prontos — edite o título e confirme.');
+}
+
+function onImgReady(m) {
+  const ph  = document.getElementById('img-placeholder');
+  const img = document.getElementById('img-el');
+  img.src = '/img/current?t=' + Date.now();
+  img.onload  = () => { ph.style.display = 'none'; img.style.display = 'block'; };
+  img.onerror = () => { ph.textContent = 'Erro ao carregar imagem'; };
+  document.getElementById('img-char').textContent  = 'Character: ' + (m.personagem || '—');
+  document.getElementById('img-scene').textContent = 'Scene: '     + (m.cenario    || '—');
+  document.getElementById('img-style').textContent = 'Style: '     + (m.estilo     || '—');
+  ['btn-img-ok','btn-img-new','btn-img-del'].forEach(id =>
+    document.getElementById(id).disabled = false);
+  appendLog('Imagem pronta — avalie e decida.');
+}
+
+function onVidReady(m) {
+  currentVideoPath = m.path;
+  document.getElementById('vid-placeholder').textContent = '▶  Vídeo pronto — abra /review para assistir';
+  document.getElementById('vid-name').textContent = m.name || '—';
+  document.getElementById('vid-progress').style.width = '60%';
+  document.getElementById('btn-publish').disabled = false;
+  document.getElementById('btn-reject').disabled  = false;
+  appendLog('Vídeo pronto em /review — assista e decida.');
+}
+
+function onDoneOk(url) {
+  appendLog('✓ Publicado: ' + url);
+  document.getElementById('vid-progress').style.width = '100%';
+  document.getElementById('btn-start').disabled = false;
+  showToast('Publicado!', url, '#0D2318', '#22C55E');
+  loadQueue(); loadHistory();
+}
+
+function onDoneKo(msg) {
+  if (msg !== 'descartado' && msg !== 'rejeitado') {
+    appendLog('✗ Erro: ' + msg);
+    showToast('Erro no pipeline', msg.slice(0,260), '#2A0D0D', '#EF4444');
+  }
+  document.getElementById('btn-start').disabled = false;
+  loadQueue(); loadHistory();
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+function resetUI() {
+  [0,1,2,3].forEach(i => setStep(i, 'idle'));
+  ['btn-confirm-inline','btn-confirm-full','btn-img-ok','btn-img-new',
+   'btn-img-del','btn-publish','btn-reject'].forEach(id =>
+    document.getElementById(id).disabled = true);
+  document.getElementById('inp-title').value = '';
+  document.getElementById('inp-desc').value  = '';
+  document.getElementById('inp-tags').value  = '';
+  const ph  = document.getElementById('img-placeholder');
+  const img = document.getElementById('img-el');
+  ph.textContent = 'Aguardando geração da imagem...';
+  ph.style.display = '';
+  img.style.display = 'none';
+  img.src = '';
+  document.getElementById('img-char').textContent  = 'Character: —';
+  document.getElementById('img-scene').textContent = 'Scene: —';
+  document.getElementById('img-style').textContent = 'Style: —';
+  document.getElementById('vid-placeholder').textContent = 'Aguardando vídeo...';
+  document.getElementById('vid-name').textContent = '—';
+  document.getElementById('vid-progress').style.width = '0%';
+  currentVideoPath = null;
+}
+
+async function openReview() {
+  await fetch('/api/open-review', { method: 'POST' });
+}
+
+async function openVideo() {
+  await fetch('/api/open-video', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ path: currentVideoPath }),
+  });
+}
+
+async function pickFile() {
+  const btn = event.currentTarget;
+  btn.disabled = true;
+  btn.textContent = '⌛ Abrindo...';
+  try {
+    const r = await fetch('/api/pick-file', { method: 'POST' });
+    const d = await r.json();
+    if (d.name) {
+      appendLog('Arquivo adicionado ao inbox: ' + d.name);
+      loadQueue();
+    }
+  } catch(e) { /* ignore */ }
+  btn.disabled = false;
+  btn.textContent = '📂 Adicionar arquivo ao inbox';
+}
+
+async function shutdownApp() {
+  if (!confirm('Encerrar a aplicação?')) return;
+  await fetch('/api/shutdown', { method: 'POST' }).catch(() => {});
+  document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#8892A4;font-size:16px;">Aplicação encerrada. Feche esta aba.</div>';
+}
+
+let toastTimer = null;
+function showToast(title, msg, bg, titleColor) {
+  const t = document.getElementById('toast');
+  t.style.display = 'block';
+  t.style.background = bg || '#1C2138';
+  const tt = document.getElementById('toast-title');
+  tt.textContent = title;
+  tt.style.color = titleColor || '#E2E8F0';
+  document.getElementById('toast-msg').textContent = msg;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.style.display = 'none'; }, 7000);
+}
+
+connect();
+setInterval(loadQueue, 10000);
+</script>
+</body>
+</html>
+"""
+
+# ── Connection Manager ────────────────────────────────────────────────────────
+
+class ConnectionManager:
+    def __init__(self):
+        self._ws:   Optional[WebSocket]                    = None
+        self._loop: Optional[asyncio.AbstractEventLoop]    = None
+        self._lock  = threading.Lock()
+
+    def connect(self, ws: WebSocket, loop: asyncio.AbstractEventLoop):
+        with self._lock:
+            self._ws, self._loop = ws, loop
+
+    def disconnect(self):
+        with self._lock:
+            self._ws = self._loop = None
+
+    def send(self, data: dict):
+        with self._lock:
+            ws, loop = self._ws, self._loop
+        if ws and loop and not loop.is_closed():
+            try:
+                asyncio.run_coroutine_threadsafe(ws.send_json(data), loop)
+            except Exception:
+                pass
 
 
-# ── Pipeline Worker ────────────────────────────────────────────────────────────
+manager = ConnectionManager()
+
+# ── Pipeline Worker ───────────────────────────────────────────────────────────
 
 class PipelineWorker(threading.Thread):
-    """Executa o pipeline em background. Usa callbacks thread-safe via _post()."""
 
-    def __init__(
-        self,
-        audio_path: Path,
-        post:       Callable,          # fn para enfileirar callbacks na GUI
-        on_log:     Callable[[str], None],
-        on_step:    Callable[[int, str], None],
-        on_meta:    Callable[[dict], None],
-        on_img:     Callable[[str, dict], None],
-        on_vid:     Callable[[str], None],
-        on_done_ok: Callable[[str], None],
-        on_done_ko: Callable[[str], None],
-    ):
+    def __init__(self, audio_path: Path):
         super().__init__(daemon=True)
-        self.audio_path   = audio_path
-        self._post        = post
-        self._on_log      = on_log
-        self._on_step     = on_step
-        self._on_meta     = on_meta
-        self._on_img      = on_img
-        self._on_vid      = on_vid
-        self._on_done_ok  = on_done_ok
-        self._on_done_ko  = on_done_ko
+        self.audio_path      = audio_path
+        self._titulo_editado = ""
+        self._decisao_img    = ""
+        self._decisao_vid    = ""
+        self._cancelled      = False
+        self._evt_titulo     = threading.Event()
+        self._evt_imagem     = threading.Event()
+        self._evt_video      = threading.Event()
 
-        self._titulo_editado: str  = ""
-        self._decisao_img:    str  = ""
-        self._decisao_vid:    str  = ""
-        self._cancelled:      bool = False
-
-        self._evt_titulo = threading.Event()
-        self._evt_imagem = threading.Event()
-        self._evt_video  = threading.Event()
-
-    # API para a GUI enviar decisões
     def set_titulo(self, titulo: str):
         self._titulo_editado = titulo
         self._evt_titulo.set()
@@ -105,8 +714,8 @@ class PipelineWorker(threading.Thread):
         for e in (self._evt_titulo, self._evt_imagem, self._evt_video):
             e.set()
 
-    def _cb(self, fn, *args):
-        self._post(lambda: fn(*args))
+    def _log(self, msg: str):  manager.send({"type": "log",  "msg": msg})
+    def _step(self, i, s):     manager.send({"type": "step", "index": i, "status": s})
 
     def run(self):
         import json as _json
@@ -120,145 +729,129 @@ class PipelineWorker(threading.Thread):
         DIR_REVIEW     = Path("review")
         DIR_REJECTED   = Path("rejected")
         DIR_LOGS       = Path("logs")
-
         DIR_PROCESSING.mkdir(exist_ok=True)
+
         audio_proc = DIR_PROCESSING / nome
         shutil.move(str(self.audio_path), str(audio_proc))
 
         def devolver():
-            try:
-                shutil.move(str(audio_proc), str(self.audio_path))
-            except Exception:
-                pass
+            try: shutil.move(str(audio_proc), str(self.audio_path))
+            except Exception: pass
 
         def limpar(manter=None):
             for f in DIR_PROCESSING.iterdir():
-                if manter and f.resolve() == Path(manter).resolve():
-                    continue
-                try:
-                    f.unlink()
-                except Exception:
-                    pass
+                if manter and f.resolve() == Path(manter).resolve(): continue
+                try: f.unlink()
+                except Exception: pass
+
+        def push_queue():
+            manager.send({"type": "queue_update", "items": _get_queue_items()})
+
+        def push_history():
+            pub, rej = _get_history()
+            manager.send({"type": "history_update", "published": pub, "rejected": rej})
 
         try:
             # [1] Metadados
-            self._cb(self._on_step, 0, "running")
-            self._cb(self._on_log, f"[1/4] Gerando metadados — {nome}")
+            self._step(0, "running")
+            self._log(f"[1/4] Gerando metadados — {nome}")
             meta = gerar_metadados(nome)
-            self._cb(self._on_step, 0, "done")
-            self._cb(self._on_log, f"  Título: {meta['titulo']}")
-            self._cb(self._on_meta, meta)
+            self._step(0, "done")
+            self._log(f"  Título: {meta['titulo']}")
+            manager.send({"type": "meta_ready", "titulo": meta.get("titulo", ""),
+                          "descricao": meta.get("descricao", ""), "tags": meta.get("tags", [])})
             self._evt_titulo.wait()
-            if self._cancelled:
-                devolver()
-                return
+            if self._cancelled: devolver(); return
 
             if self._titulo_editado:
                 old = meta["titulo"]
                 meta["titulo"] = f"｜ {self._titulo_editado} ｜ slowed + reverb - vers {NOME_CANAL}"
                 meta["descricao"] = meta["descricao"].replace(old, meta["titulo"])
-            self._cb(self._on_log, f"  Título final: {meta['titulo']}")
+            self._log(f"  Título final: {meta['titulo']}")
 
-            # Duração do áudio
             res = subprocess.run(
                 ["ffprobe", "-v", "quiet", "-print_format", "json",
                  "-show_streams", str(audio_proc)],
                 capture_output=True, text=True,
             )
-            if res.returncode != 0:
-                raise RuntimeError(f"ffprobe: {res.stderr}")
+            if res.returncode != 0: raise RuntimeError(f"ffprobe: {res.stderr}")
             duracao = 0
             for s in _json.loads(res.stdout).get("streams", []):
                 d = s.get("duration")
-                if d:
-                    duracao = int(float(d))
-                    break
-            if not duracao:
-                raise RuntimeError("Duração do áudio não encontrada.")
-            self._cb(self._on_log, f"  Duração: {duracao}s")
+                if d: duracao = int(float(d)); break
+            if not duracao: raise RuntimeError("Duração do áudio não encontrada.")
+            self._log(f"  Duração: {duracao}s")
 
-            # [2] Imagem — loop de aprovação
+            # [2] Imagem
             tentativa = 0
             while True:
                 tentativa += 1
-                self._cb(self._on_step, 1, "running")
+                self._step(1, "running")
                 self._evt_imagem.clear()
-                self._cb(self._on_log, f"[2/4] Gerando imagem (tentativa {tentativa})...")
-                img_path, img_meta = gerar_imagem(
-                    destino=str(DIR_PROCESSING / "imagem_gerada.png")
-                )
-                self._cb(self._on_step, 1, "done")
-                self._cb(self._on_log, f"  Personagem: {img_meta.get('personagem','')}")
-                self._cb(self._on_log, f"  Cenário   : {img_meta.get('cenario','')}")
-                self._cb(self._on_img, img_path, img_meta)
+                self._log(f"[2/4] Gerando imagem (tentativa {tentativa})...")
+                img_path, img_meta = gerar_imagem(destino=str(DIR_PROCESSING / "imagem_gerada.png"))
+                self._step(1, "done")
+                self._log(f"  Personagem: {img_meta.get('personagem','')}")
+                self._log(f"  Cenário   : {img_meta.get('cenario','')}")
+                manager.send({"type": "img_ready",
+                              "personagem": img_meta.get("personagem", "—"),
+                              "cenario":    img_meta.get("cenario",    "—"),
+                              "estilo":     img_meta.get("estilo",     "—")})
                 self._evt_imagem.wait()
-                if self._cancelled:
-                    devolver()
-                    return
+                if self._cancelled: devolver(); return
                 if self._decisao_img == "s":
                     break
                 elif self._decisao_img == "d":
-                    self._cb(self._on_step, 1, "error")
-                    devolver()
-                    limpar()
-                    self._cb(self._on_log, "  Descartado. Áudio devolvido ao /inbox.")
-                    self._cb(self._on_done_ko, "descartado")
-                    return
+                    self._step(1, "error")
+                    devolver(); limpar()
+                    self._log("  Descartado. Áudio devolvido ao /inbox.")
+                    manager.send({"type": "done_ko", "msg": "descartado"})
+                    push_queue(); push_history(); return
 
-            # [3] Ken Burns
-            self._cb(self._on_step, 2, "running")
-            self._cb(self._on_log, "[3/4] Aplicando Ken Burns...")
+            # [3] Ken Burns + merge
+            self._step(2, "running")
+            self._log("[3/4] Aplicando Ken Burns...")
             video_anim = str(DIR_PROCESSING / "video_animado.mp4")
-            aplicar_ken_burns(
-                imagem=img_path, duracao=duracao, saida=video_anim,
-                fps=60, resolucao="1920x1080",
-            )
-            self._cb(self._on_log, "  Vídeo animado gerado.")
-
-            self._cb(self._on_log, "[4a] Combinando áudio + vídeo...")
+            aplicar_ken_burns(imagem=img_path, duracao=duracao, saida=video_anim,
+                              fps=60, resolucao="1920x1080")
+            self._log("  Vídeo animado gerado.")
+            self._log("[4a] Combinando áudio + vídeo...")
             nome_final  = Path(nome).stem + "_final.mp4"
             video_final = DIR_PROCESSING / nome_final
             res = subprocess.run(
                 ["ffmpeg", "-y", "-i", str(video_anim), "-i", str(audio_proc),
-                 "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest",
-                 str(video_final)],
+                 "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", str(video_final)],
                 capture_output=True, text=True,
             )
-            if res.returncode != 0:
-                raise RuntimeError(f"FFmpeg: {res.stderr[-600:]}")
-            self._cb(self._on_step, 2, "done")
+            if res.returncode != 0: raise RuntimeError(f"FFmpeg: {res.stderr[-600:]}")
+            self._step(2, "done")
 
             DIR_REVIEW.mkdir(exist_ok=True)
             video_review = DIR_REVIEW / nome_final
             shutil.move(str(video_final), str(video_review))
             limpar(manter=audio_proc)
-            self._cb(self._on_log, f"  Vídeo pronto: {video_review.name}")
-            self._cb(self._on_vid, str(video_review))
+            self._log(f"  Vídeo pronto: {video_review.name}")
+            manager.send({"type": "vid_ready", "path": str(video_review), "name": video_review.name})
 
             self._evt_video.wait()
-            if self._cancelled:
-                devolver()
-                return
+            if self._cancelled: devolver(); return
 
             if self._decisao_vid != "s":
                 DIR_REJECTED.mkdir(exist_ok=True)
                 shutil.move(str(video_review), str(DIR_REJECTED / nome_final))
-                devolver()
-                limpar()
-                self._cb(self._on_log, "  Rejeitado. Áudio devolvido ao /inbox.")
-                self._cb(self._on_done_ko, "rejeitado")
-                return
+                devolver(); limpar()
+                self._log("  Rejeitado. Áudio devolvido ao /inbox.")
+                manager.send({"type": "done_ko", "msg": "rejeitado"})
+                push_queue(); push_history(); return
 
             # [4] Upload
-            self._cb(self._on_step, 3, "running")
-            self._cb(self._on_log, "[4/4] Publicando no YouTube...")
-            resultado = publicar_video(
-                video_path=str(video_review),
-                titulo=meta["titulo"],
-                descricao=meta["descricao"],
-                tags=meta["tags"],
-            )
-            self._cb(self._on_step, 3, "done")
+            self._step(3, "running")
+            self._log("[4/4] Publicando no YouTube...")
+            resultado = publicar_video(video_path=str(video_review),
+                                       titulo=meta["titulo"],
+                                       descricao=meta["descricao"],
+                                       tags=meta["tags"])
+            self._step(3, "done")
 
             DIR_LOGS.mkdir(exist_ok=True)
             agora = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -269,808 +862,205 @@ class PipelineWorker(threading.Thread):
                 encoding="utf-8",
             )
             limpar()
-            self._cb(self._on_log, f"  ✓ Publicado: {resultado['url']}")
-            self._cb(self._on_done_ok, resultado["url"])
+            self._log(f"  ✓ Publicado: {resultado['url']}")
+            manager.send({"type": "done_ok", "url": resultado["url"]})
+            push_queue(); push_history()
 
         except Exception:
             err = traceback.format_exc()
             devolver()
-            self._cb(self._on_log, f"[ERRO] {err.splitlines()[-1]}")
-            self._cb(self._on_done_ko, err.splitlines()[-1])
-            for i in range(4):
-                self._cb(self._on_step, i, "error")
+            self._log(f"[ERRO] {err.splitlines()[-1]}")
+            manager.send({"type": "done_ko", "msg": err.splitlines()[-1]})
+            for i in range(4): self._step(i, "error")
 
 
-# ── Widgets auxiliares ────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _section_label(parent, text: str) -> ctk.CTkLabel:
-    return ctk.CTkLabel(
-        parent, text=text.upper(), font=F_ACCENT,
-        text_color=ACCENT, anchor="w",
+def _get_queue_items() -> list:
+    inbox = Path("inbox")
+    inbox.mkdir(exist_ok=True)
+    exts = {".mp3", ".wav", ".flac", ".m4a", ".ogg"}
+    files = sorted(
+        (f for f in inbox.iterdir() if f.is_file() and f.suffix.lower() in exts),
+        key=lambda f: f.stat().st_mtime,
     )
+    return [
+        {"stem": f.stem,
+         "date": datetime.fromtimestamp(f.stat().st_mtime).strftime("%d/%m/%Y")}
+        for f in files
+    ]
 
 
-def _divider(parent):
-    return ctk.CTkFrame(parent, height=1, fg_color=BORDER, corner_radius=0)
+def _get_history() -> tuple:
+    DIR_LOGS     = Path("logs");     DIR_LOGS.mkdir(exist_ok=True)
+    DIR_REJECTED = Path("rejected"); DIR_REJECTED.mkdir(exist_ok=True)
+    published = [
+        f.stem[10:] for f in sorted(
+            DIR_LOGS.glob("publicado_*.txt"),
+            key=lambda x: x.stat().st_mtime, reverse=True,
+        )[:12]
+    ]
+    rejected = [
+        f.stem[:-6] for f in sorted(
+            DIR_REJECTED.glob("*_final.mp4"),
+            key=lambda x: x.stat().st_mtime, reverse=True,
+        )[:8]
+    ]
+    return published, rejected
 
 
-class TrackRow(ctk.CTkFrame):
-    """Linha de fila — altura fixa, ícone, índice.nome, data."""
-
-    HEIGHT = 44
-
-    def __init__(self, parent, index: int, f: Path, selected: bool, **kw):
-        bg = BG_ROW_SEL if selected else BG_ROW
-        super().__init__(parent, fg_color=bg, corner_radius=4,
-                         height=self.HEIGHT, **kw)
-        self.pack_propagate(False)   # altura fixa, filhos não expandem o frame
-
-        if selected:
-            bar = ctk.CTkFrame(self, width=3, fg_color=ACCENT, corner_radius=0)
-            bar.pack(side="left", fill="y")
-
-        icon_color = ACCENT if selected else TEXT_DIM
-        pad_left = 4 if selected else 10
-        ctk.CTkLabel(self, text="♪", font=F_BODY, text_color=icon_color, width=22
-                     ).pack(side="left", padx=(pad_left, 2))
-
-        date_str = datetime.fromtimestamp(f.stat().st_mtime).strftime("%d/%m/%Y")
-        ctk.CTkLabel(self, text=date_str, font=F_SMALL, text_color=TEXT_DIM, width=72
-                     ).pack(side="right", padx=(0, 8))
-
-        stem = f.stem
-        display = f"{index:02d}. {stem}" if len(stem) <= 24 else f"{index:02d}. {stem[:22]}…"
-        ctk.CTkLabel(self, text=display, font=F_SMALL,
-                     text_color=TEXT_MAIN if selected else TEXT_DIM, anchor="w"
-                     ).pack(side="left", fill="x", padx=(2, 4))
-
-
-class StepRow(ctk.CTkFrame):
-    """Linha de status do pipeline — número, nome, badge."""
-
-    CONFIGS = {
-        "idle":    (TEXT_DIM,  "PENDING", TEXT_DIM,   "#1E2340", "transparent"),
-        "running": (TEXT_MAIN, "ACTIVE",  TEXT_MAIN,  ACCENT,    BG_ROW_SEL),
-        "done":    (TEXT_MAIN, "OK",      TEXT_GREEN,  "#153020", "transparent"),
-        "error":   (TEXT_RED,  "ERROR",   TEXT_RED,   "#301515", "transparent"),
-    }
-
-    def __init__(self, parent, number: int, label: str, **kw):
-        super().__init__(parent, fg_color="transparent", corner_radius=4, **kw)
-        self.columnconfigure(0, weight=1)
-        self.columnconfigure(1, weight=0)
-
-        self._lbl = ctk.CTkLabel(self, text=f"{number}. {label}", font=F_BODY,
-                                 text_color=TEXT_DIM, anchor="w")
-        self._lbl.grid(row=0, column=0, sticky="w", padx=12, pady=8)
-
-        self._badge = ctk.CTkLabel(self, text="PENDING", font=F_BADGE,
-                                   text_color=TEXT_DIM, fg_color="#1E2340",
-                                   corner_radius=4, width=58, height=20)
-        self._badge.grid(row=0, column=1, padx=12, pady=8)
-
-    def set_status(self, status: str):
-        tc, bt, btc, bbg, rbg = self.CONFIGS.get(status, self.CONFIGS["idle"])
-        self._lbl.configure(text_color=tc)
-        self._badge.configure(text=bt, text_color=btc, fg_color=bbg)
-        self.configure(fg_color=rbg)
-
-
-# ── App principal ─────────────────────────────────────────────────────────────
-
-class OvxrNightApp(ctk.CTk):
-
-    def __init__(self):
-        super().__init__()
-        self.title("OvxrNight Control Center v1.0")
-        self.geometry("1440x900")
-        self.minsize(1280, 800)
-        self.configure(fg_color=BG_APP)
-
-        self._worker: Optional[PipelineWorker] = None
-        self._current_audio: Optional[Path]    = None
-        self._video_path: Optional[str]        = None
-
-        # Fila de callbacks GUI (thread-safe)
-        self._q: _queue.Queue = _queue.Queue()
-        self.after(40, self._drain)
-
-        self._build_ui()
-        self._refresh_queue()
-        self._refresh_history()
-        self.after(6000, self._auto_refresh)
-
-    # ── Queue drain ───────────────────────────────────────────────────────────
-
-    def _drain(self):
-        try:
-            while True:
-                self._q.get_nowait()()
-        except _queue.Empty:
-            pass
-        self.after(40, self._drain)
-
-    def _post(self, fn: Callable):
-        self._q.put(fn)
-
-    # ── Build UI ──────────────────────────────────────────────────────────────
-
-    def _build_ui(self):
-        self.grid_columnconfigure(0, weight=0, minsize=310)
-        self.grid_columnconfigure(1, weight=1)
-        self.grid_columnconfigure(2, weight=0, minsize=330)
-        self.grid_rowconfigure(0, weight=1)
-
-        self._build_left().grid(row=0, column=0, sticky="nsew")
-        ctk.CTkFrame(self, width=1, fg_color=BORDER, corner_radius=0
-                     ).grid(row=0, column=0, sticky="nse")
-
-        self._build_center().grid(row=0, column=1, sticky="nsew", padx=1)
-
-        ctk.CTkFrame(self, width=1, fg_color=BORDER, corner_radius=0
-                     ).grid(row=0, column=2, sticky="nsw")
-        self._build_right().grid(row=0, column=2, sticky="nsew")
-
-    # ── Left Panel ────────────────────────────────────────────────────────────
-
-    def _build_left(self) -> ctk.CTkFrame:
-        pnl = ctk.CTkFrame(self, fg_color=BG_PANEL, corner_radius=0)
-        pnl.grid_rowconfigure(1, weight=1)
-        pnl.grid_columnconfigure(0, weight=1)
-
-        # Header
-        hdr = ctk.CTkFrame(pnl, fg_color="transparent", corner_radius=0)
-        hdr.grid(row=0, column=0, sticky="ew", padx=16, pady=(16, 8))
-        _section_label(hdr, "Queue Management").pack(side="left")
-        ctk.CTkLabel(hdr, text="⚙", font=F_BODY, text_color=TEXT_DIM
-                     ).pack(side="right")
-
-        # Inbox sub-header
-        sub = ctk.CTkFrame(pnl, fg_color=BG_CARD, corner_radius=6)
-        sub.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 4))
-        sub.grid_columnconfigure(0, weight=1)
-
-        sub_row = ctk.CTkFrame(sub, fg_color="transparent")
-        sub_row.grid(row=0, column=0, sticky="ew", padx=12, pady=(8, 2))
-        self.lbl_inbox_count = ctk.CTkLabel(
-            sub_row, text="INBOX", font=F_LABEL, text_color=TEXT_MAIN, anchor="w"
+def _pick_file_sync() -> Optional[str]:
+    """Abre dialog nativo do Windows via PowerShell e copia o arquivo para /inbox."""
+    ps = (
+        "Add-Type -AssemblyName System.Windows.Forms; "
+        "$d = New-Object System.Windows.Forms.OpenFileDialog; "
+        "$d.Filter = 'Audio Files|*.mp3;*.wav;*.flac;*.m4a;*.ogg|All Files|*.*'; "
+        "$d.Title = 'Selecionar arquivo de audio para o inbox'; "
+        "if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $d.FileName }"
+    )
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps],
+            capture_output=True, text=True, timeout=120,
         )
-        self.lbl_inbox_count.pack(side="left")
-        ctk.CTkLabel(sub_row, text="···", font=F_BODY, text_color=TEXT_DIM
-                     ).pack(side="right")
-        ctk.CTkLabel(sub, text="Ordenado do mais antigo", font=F_SMALL,
-                     text_color=TEXT_DIM, anchor="w"
-                     ).grid(row=1, column=0, sticky="w", padx=12, pady=(0, 8))
+        path = r.stdout.strip()
+        if path and Path(path).exists():
+            dest = Path("inbox") / Path(path).name
+            Path("inbox").mkdir(exist_ok=True)
+            shutil.copy2(path, dest)
+            return Path(path).name
+    except Exception:
+        pass
+    return None
 
-        # Queue scroll area
-        self.queue_scroll = ctk.CTkScrollableFrame(
-            pnl, fg_color="transparent", scrollbar_button_color=BORDER,
-            scrollbar_button_hover_color=ACCENT,
-        )
-        self.queue_scroll.grid(row=2, column=0, sticky="nsew", padx=12, pady=4)
-        pnl.grid_rowconfigure(2, weight=1)
 
-        _divider(pnl).grid(row=3, column=0, sticky="ew", padx=12, pady=6)
+# ── FastAPI App ───────────────────────────────────────────────────────────────
 
-        # History
-        hist_hdr = ctk.CTkFrame(pnl, fg_color="transparent")
-        hist_hdr.grid(row=4, column=0, sticky="ew", padx=16, pady=(4, 6))
-        _section_label(hist_hdr, "History").pack(side="left")
+app = FastAPI()
+_worker: Optional[PipelineWorker] = None
+_server: Optional[uvicorn.Server]  = None
 
-        ctk.CTkLabel(pnl, text="PUBLISHED", font=F_BADGE,
-                     text_color=TEXT_GREEN, anchor="w"
-                     ).grid(row=5, column=0, sticky="w", padx=16, pady=(0, 4))
 
-        self.scroll_published = ctk.CTkScrollableFrame(
-            pnl, fg_color="transparent", height=100,
-            scrollbar_button_color=BORDER,
-        )
-        self.scroll_published.grid(row=6, column=0, sticky="ew", padx=12, pady=(0, 6))
+@app.get("/", response_class=HTMLResponse)
+async def index():
+    return HTML_TEMPLATE
 
-        ctk.CTkLabel(pnl, text="REJECTED", font=F_BADGE,
-                     text_color=TEXT_RED, anchor="w"
-                     ).grid(row=7, column=0, sticky="w", padx=16, pady=(0, 4))
 
-        self.scroll_rejected = ctk.CTkScrollableFrame(
-            pnl, fg_color="transparent", height=80,
-            scrollbar_button_color=BORDER,
-        )
-        self.scroll_rejected.grid(row=8, column=0, sticky="ew", padx=12, pady=(0, 14))
+@app.get("/api/queue")
+async def api_queue():
+    return JSONResponse({"items": _get_queue_items()})
 
-        return pnl
 
-    # ── Center Panel ──────────────────────────────────────────────────────────
+@app.get("/api/history")
+async def api_history():
+    pub, rej = _get_history()
+    return JSONResponse({"published": pub, "rejected": rej})
 
-    def _build_center(self) -> ctk.CTkFrame:
-        pnl = ctk.CTkFrame(self, fg_color=BG_APP, corner_radius=0)
-        pnl.grid_columnconfigure(0, weight=1)
-        pnl.grid_rowconfigure(2, weight=1)
 
-        # Workspace header
-        wk = ctk.CTkFrame(pnl, fg_color="transparent")
-        wk.grid(row=0, column=0, sticky="ew", padx=20, pady=(18, 4))
-        ctk.CTkLabel(wk, text="ACTIVE WORKSPACE", font=F_ACCENT,
-                     text_color=ACCENT, anchor="w"
-                     ).pack(anchor="w")
-        self.lbl_song_title = ctk.CTkLabel(
-            wk, text="Nenhum arquivo selecionado",
-            font=F_TITLE, text_color=TEXT_MAIN, anchor="w", wraplength=660,
-        )
-        self.lbl_song_title.pack(anchor="w", pady=(2, 0))
+@app.get("/img/current")
+async def img_current():
+    path = Path("processing") / "imagem_gerada.png"
+    if path.exists():
+        return FileResponse(str(path), media_type="image/png")
+    return JSONResponse({"error": "not found"}, status_code=404)
 
-        # Start button
-        self.btn_start = ctk.CTkButton(
-            pnl, text="▶   Iniciar Pipeline",
-            font=F_H2, fg_color=ACCENT, hover_color=ACCENT_HOV,
-            text_color="#FFFFFF", text_color_disabled="#FFFFFF",
-            height=38, corner_radius=6,
-            state="disabled", command=self._on_start,
-        )
-        self.btn_start.grid(row=1, column=0, sticky="e", padx=20, pady=(0, 12))
 
-        # Scroll for center content
-        scroll = ctk.CTkScrollableFrame(
-            pnl, fg_color="transparent",
-            scrollbar_button_color=BORDER,
-            scrollbar_button_hover_color=ACCENT,
-        )
-        scroll.grid(row=2, column=0, sticky="nsew", padx=8, pady=0)
-        scroll.grid_columnconfigure(0, weight=1)
-        scroll.grid_columnconfigure(1, weight=1)
+@app.post("/api/open-review")
+async def api_open_review():
+    d = Path("review")
+    d.mkdir(exist_ok=True)
+    subprocess.Popen(["explorer", str(d.resolve())])
+    return {"ok": True}
 
-        # Metadata card
-        self._build_metadata_card(scroll).grid(
-            row=0, column=0, sticky="nsew", padx=(8, 4), pady=8
-        )
 
-        # Image review card
-        self._build_image_card(scroll).grid(
-            row=0, column=1, sticky="nsew", padx=(4, 8), pady=8
-        )
-
-        # Video preview card (full width)
-        self._build_video_card(scroll).grid(
-            row=1, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 12)
-        )
-
-        return pnl
-
-    def _build_metadata_card(self, parent) -> ctk.CTkFrame:
-        card = ctk.CTkFrame(parent, fg_color=BG_CARD, corner_radius=10)
-        card.grid_columnconfigure(0, weight=1)
-
-        _section_label(card, "Metadata Edit").grid(
-            row=0, column=0, sticky="w", padx=14, pady=(14, 8)
-        )
-
-        # Title row
-        ctk.CTkLabel(card, text="Title", font=F_LABEL,
-                     text_color=TEXT_DIM, anchor="w"
-                     ).grid(row=1, column=0, sticky="w", padx=14, pady=(0, 4))
-
-        title_row = ctk.CTkFrame(card, fg_color="transparent")
-        title_row.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 10))
-        title_row.grid_columnconfigure(0, weight=1)
-
-        self.entry_titulo = ctk.CTkEntry(
-            title_row, placeholder_text="Artista - Nome da Música",
-            font=F_BODY, fg_color=BG_INPUT, border_color=BORDER,
-            text_color=TEXT_MAIN, height=36,
-        )
-        self.entry_titulo.grid(row=0, column=0, sticky="ew", padx=(0, 8))
-
-        self.btn_confirm_inline = ctk.CTkButton(
-            title_row, text="Confirm Title",
-            font=F_SMALL, fg_color=ACCENT, hover_color=ACCENT_HOV,
-            text_color="#FFFFFF", text_color_disabled="#FFFFFF",
-            height=36, width=110, corner_radius=6,
-            state="disabled", command=self._on_confirm_meta,
-        )
-        self.btn_confirm_inline.grid(row=0, column=1)
-
-        # Description
-        ctk.CTkLabel(card, text="Description", font=F_LABEL,
-                     text_color=TEXT_DIM, anchor="w"
-                     ).grid(row=3, column=0, sticky="w", padx=14, pady=(0, 4))
-        self.txt_desc = ctk.CTkTextbox(
-            card, height=80, font=F_BODY,
-            fg_color=BG_INPUT, border_color=BORDER,
-            text_color=TEXT_MAIN, border_width=1,
-        )
-        self.txt_desc.grid(row=4, column=0, sticky="ew", padx=14, pady=(0, 10))
-
-        # Tags
-        ctk.CTkLabel(card, text="Tags", font=F_LABEL,
-                     text_color=TEXT_DIM, anchor="w"
-                     ).grid(row=5, column=0, sticky="w", padx=14, pady=(0, 4))
-        self.entry_tags = ctk.CTkEntry(
-            card, placeholder_text="slowed, reverb, anime, ...",
-            font=F_BODY, fg_color=BG_INPUT, border_color=BORDER,
-            text_color=TEXT_MAIN, height=36,
-        )
-        self.entry_tags.grid(row=6, column=0, sticky="ew", padx=14, pady=(0, 12))
-
-        # Confirm button full width
-        self.btn_confirm_full = ctk.CTkButton(
-            card, text="Confirm Title",
-            font=F_H2, fg_color=ACCENT, hover_color=ACCENT_HOV,
-            text_color="#FFFFFF", text_color_disabled="#FFFFFF",
-            height=42, corner_radius=6,
-            state="disabled", command=self._on_confirm_meta,
-        )
-        self.btn_confirm_full.grid(row=7, column=0, sticky="ew", padx=14, pady=(0, 14))
-
-        return card
-
-    def _build_image_card(self, parent) -> ctk.CTkFrame:
-        card = ctk.CTkFrame(parent, fg_color=BG_CARD, corner_radius=10)
-        card.grid_columnconfigure(0, weight=1)
-
-        _section_label(card, "Image Review").grid(
-            row=0, column=0, sticky="w", padx=14, pady=(14, 8)
-        )
-
-        # Image preview area
-        img_container = ctk.CTkFrame(card, fg_color=BG_INPUT, corner_radius=8, height=200)
-        img_container.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 10))
-        img_container.grid_propagate(False)
-        img_container.grid_columnconfigure(0, weight=1)
-        img_container.grid_rowconfigure(0, weight=1)
-
-        self.lbl_img_preview = ctk.CTkLabel(
-            img_container, text="Aguardando geração da imagem...",
-            font=F_BODY, text_color=TEXT_DIM,
-            image=None,
-        )
-        self.lbl_img_preview.grid(row=0, column=0, sticky="nsew", padx=8, pady=8)
-
-        # Prompt elements
-        prompt_frame = ctk.CTkFrame(card, fg_color="transparent")
-        prompt_frame.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 8))
-        ctk.CTkLabel(prompt_frame, text="Prompt Elements:", font=F_LABEL,
-                     text_color=TEXT_DIM, anchor="w"
-                     ).pack(anchor="w")
-
-        self.lbl_img_char  = ctk.CTkLabel(prompt_frame, text="Character: —",
-                                          font=F_SMALL, text_color=TEXT_DIM, anchor="w")
-        self.lbl_img_scene = ctk.CTkLabel(prompt_frame, text="Scene: —",
-                                          font=F_SMALL, text_color=TEXT_DIM, anchor="w")
-        self.lbl_img_style = ctk.CTkLabel(prompt_frame, text="Style: —",
-                                          font=F_SMALL, text_color=TEXT_DIM, anchor="w")
-        for lbl in (self.lbl_img_char, self.lbl_img_scene, self.lbl_img_style):
-            lbl.pack(anchor="w", pady=1)
-
-        # Image action buttons
-        btn_row = ctk.CTkFrame(card, fg_color="transparent")
-        btn_row.grid(row=3, column=0, sticky="ew", padx=14, pady=(0, 14))
-        btn_row.grid_columnconfigure((0, 1, 2), weight=1)
-
-        self.btn_img_ok = ctk.CTkButton(
-            btn_row, text="Aprovar", font=F_SMALL,
-            fg_color="#0A6B52", hover_color="#0D8568",
-            text_color="#FFFFFF", text_color_disabled="#FFFFFF",
-            height=34, corner_radius=6,
-            state="disabled", command=lambda: self._on_img_decision("s"),
-        )
-        self.btn_img_ok.grid(row=0, column=0, sticky="ew", padx=(0, 4))
-
-        self.btn_img_new = ctk.CTkButton(
-            btn_row, text="Nova Imagem", font=F_SMALL,
-            fg_color="#1E4070", hover_color="#265090",
-            text_color="#FFFFFF", text_color_disabled="#FFFFFF",
-            height=34, corner_radius=6,
-            state="disabled", command=lambda: self._on_img_decision("n"),
-        )
-        self.btn_img_new.grid(row=0, column=1, sticky="ew", padx=4)
-
-        self.btn_img_del = ctk.CTkButton(
-            btn_row, text="Descartar", font=F_SMALL,
-            fg_color="#7A1515", hover_color="#9A1A1A",
-            text_color="#FFFFFF", text_color_disabled="#FFFFFF",
-            height=34, corner_radius=6,
-            state="disabled", command=lambda: self._on_img_decision("d"),
-        )
-        self.btn_img_del.grid(row=0, column=2, sticky="ew", padx=(4, 0))
-
-        return card
-
-    def _build_video_card(self, parent) -> ctk.CTkFrame:
-        card = ctk.CTkFrame(parent, fg_color=BG_CARD, corner_radius=10)
-        card.grid_columnconfigure(0, weight=3)
-        card.grid_columnconfigure(1, weight=2)
-
-        _section_label(card, "Video Preview").grid(
-            row=0, column=0, columnspan=2, sticky="w", padx=14, pady=(14, 8)
-        )
-
-        # Video display area
-        vid_area = ctk.CTkFrame(card, fg_color=BG_INPUT, corner_radius=8, height=180)
-        vid_area.grid(row=1, column=0, sticky="nsew", padx=(14, 6), pady=(0, 8))
-        vid_area.grid_propagate(False)
-        vid_area.grid_columnconfigure(0, weight=1)
-        vid_area.grid_rowconfigure(0, weight=1)
-
-        self.lbl_vid_preview = ctk.CTkLabel(
-            vid_area, text="Aguardando vídeo...",
-            font=F_BODY, text_color=TEXT_DIM,
-        )
-        self.lbl_vid_preview.grid(row=0, column=0, sticky="nsew")
-
-        # Progress bar
-        self.vid_progress = ctk.CTkProgressBar(
-            card, fg_color=BG_INPUT, progress_color=ACCENT,
-            height=4, corner_radius=2,
-        )
-        self.vid_progress.set(0)
-        self.vid_progress.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 6))
-
-        # Player controls
-        ctrl = ctk.CTkFrame(card, fg_color="transparent")
-        ctrl.grid(row=3, column=0, sticky="ew", padx=14, pady=(0, 10))
-
-        self.btn_vid_play = ctk.CTkButton(
-            ctrl, text="▶", font=F_BODY, width=36, height=30,
-            fg_color=BG_INPUT, hover_color="#2A3255",
-            text_color=TEXT_DIM, corner_radius=4,
-            command=self._on_open_video,
-        )
-        self.btn_vid_play.pack(side="left", padx=(0, 4))
-        for sym in ("⏸", "⏭"):
-            ctk.CTkButton(ctrl, text=sym, font=F_BODY, width=30, height=30,
-                          fg_color=BG_INPUT, hover_color="#2A3255",
-                          text_color=TEXT_DIM, corner_radius=4,
-                          ).pack(side="left", padx=2)
-
-        ctk.CTkButton(ctrl, text="🔊", font=F_BODY, width=30, height=30,
-                      fg_color=BG_INPUT, hover_color="#2A3255",
-                      text_color=TEXT_DIM, corner_radius=4,
-                      ).pack(side="right", padx=2)
-        ctk.CTkButton(ctrl, text="⛶", font=F_BODY, width=30, height=30,
-                      fg_color=BG_INPUT, hover_color="#2A3255",
-                      text_color=TEXT_DIM, corner_radius=4,
-                      ).pack(side="right", padx=2)
-
-        # Right side — publish/reject
-        right = ctk.CTkFrame(card, fg_color="transparent")
-        right.grid(row=1, column=1, rowspan=3, sticky="nsew", padx=(6, 14), pady=(0, 10))
-        right.grid_columnconfigure(0, weight=1)
-        right.grid_rowconfigure(0, weight=1)
-
-        self.lbl_vid_name = ctk.CTkLabel(
-            right, text="—", font=F_SMALL, text_color=TEXT_DIM,
-            anchor="w", wraplength=260,
-        )
-        self.lbl_vid_name.grid(row=0, column=0, sticky="ew", pady=(4, 8))
-
-        ctk.CTkButton(
-            right, text="📁  Abrir /review",
-            font=F_SMALL, fg_color=BG_INPUT, hover_color="#2A3255",
-            text_color=TEXT_DIM, height=32, corner_radius=6,
-            command=self._on_open_review,
-        ).grid(row=1, column=0, sticky="ew", pady=(0, 12))
-
-        self.btn_publish = ctk.CTkButton(
-            right, text="▶   Publicar no YouTube",
-            font=F_H2, fg_color=ACCENT, hover_color=ACCENT_HOV,
-            text_color="#FFFFFF", text_color_disabled="#FFFFFF",
-            height=42, corner_radius=6,
-            state="disabled", command=lambda: self._on_vid_decision("s"),
-        )
-        self.btn_publish.grid(row=2, column=0, sticky="ew", pady=(0, 8))
-
-        self.btn_reject_vid = ctk.CTkButton(
-            right, text="✗  Descartar Vídeo",
-            font=F_SMALL, fg_color="#7A1515", hover_color="#9A1A1A",
-            text_color="#FFFFFF", text_color_disabled="#FFFFFF",
-            height=36, corner_radius=6,
-            state="disabled", command=lambda: self._on_vid_decision("n"),
-        )
-        self.btn_reject_vid.grid(row=3, column=0, sticky="ew")
-
-        return card
-
-    # ── Right Panel ───────────────────────────────────────────────────────────
-
-    def _build_right(self) -> ctk.CTkFrame:
-        pnl = ctk.CTkFrame(self, fg_color=BG_PANEL, corner_radius=0)
-        pnl.grid_columnconfigure(0, weight=1)
-        pnl.grid_rowconfigure(2, weight=1)
-
-        # Header
-        hdr = ctk.CTkFrame(pnl, fg_color="transparent")
-        hdr.grid(row=0, column=0, sticky="ew", padx=16, pady=(16, 8))
-        _section_label(hdr, "Pipeline Monitoring").pack(side="left")
-        ctk.CTkLabel(hdr, text="ⓘ", font=F_BODY, text_color=TEXT_DIM).pack(side="right")
-
-        # Task Status
-        status_card = ctk.CTkFrame(pnl, fg_color=BG_CARD, corner_radius=8)
-        status_card.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 10))
-        status_card.grid_columnconfigure(0, weight=1)
-
-        ctk.CTkLabel(status_card, text="TASK STATUS", font=F_BADGE,
-                     text_color=TEXT_DIM, anchor="w"
-                     ).grid(row=0, column=0, sticky="w", padx=12, pady=(10, 4))
-
-        self.step_rows: list[StepRow] = []
-        for i, name in enumerate(["Metadata", "Image", "Video", "Upload"]):
-            row = StepRow(status_card, i + 1, name)
-            row.grid(row=i + 1, column=0, sticky="ew", padx=4, pady=1)
-            self.step_rows.append(row)
-
-        ctk.CTkFrame(status_card, height=6, fg_color="transparent"
-                     ).grid(row=5, column=0)
-
-        # Real-time log
-        log_hdr = ctk.CTkFrame(pnl, fg_color="transparent")
-        log_hdr.grid(row=2, column=0, sticky="new", padx=16, pady=(4, 6))
-        _section_label(log_hdr, "Real-Time Log").pack(side="left")
-        ctk.CTkButton(log_hdr, text="Limpar", font=F_SMALL, width=60, height=24,
-                      fg_color=BG_INPUT, hover_color="#2A3255", text_color=TEXT_DIM,
-                      corner_radius=4, command=self._clear_log,
-                      ).pack(side="right")
-
-        self.log_box = ctk.CTkTextbox(
-            pnl, fg_color=BG_CARD, text_color=TEXT_DIM,
-            font=F_MONO, border_width=1, border_color=BORDER,
-            corner_radius=8, wrap="none",
-        )
-        self.log_box.grid(row=3, column=0, sticky="nsew", padx=12, pady=(0, 12))
-        pnl.grid_rowconfigure(3, weight=1)
-
-        return pnl
-
-    # ── Refresh ───────────────────────────────────────────────────────────────
-
-    def _auto_refresh(self):
-        self._refresh_queue()
-        self.after(6000, self._auto_refresh)
-
-    def _refresh_queue(self):
-        DIR_INBOX = Path("inbox")
-        DIR_INBOX.mkdir(exist_ok=True)
-        exts = {".mp3", ".wav", ".flac", ".m4a", ".ogg"}
-        queue = sorted(
-            (f for f in DIR_INBOX.iterdir() if f.is_file() and f.suffix.lower() in exts),
-            key=lambda f: f.stat().st_mtime,
-        )
-
-        for w in self.queue_scroll.winfo_children():
-            w.destroy()
-
-        for i, f in enumerate(queue):
-            row = TrackRow(self.queue_scroll, i + 1, f, selected=(i == 0))
-            row.pack(fill="x", padx=4, pady=2, anchor="nw")
-
-        n = len(queue)
-        self.lbl_inbox_count.configure(
-            text=f"INBOX  ({n} {'Track' if n == 1 else 'Tracks'})"
-        )
-
-        running = self._worker is not None and self._worker.is_alive()
-        if queue:
-            self._current_audio = queue[0]
-            stem = queue[0].stem
-            display = stem if len(stem) <= 50 else stem[:48] + "…"
-            self.lbl_song_title.configure(text=display, text_color=TEXT_MAIN)
-            self.btn_start.configure(state="normal" if not running else "disabled")
-        else:
-            self._current_audio = None
-            self.lbl_song_title.configure(text="Inbox vazia", text_color=TEXT_DIM)
-            self.btn_start.configure(state="disabled")
-
-    def _refresh_history(self):
-        DIR_LOGS     = Path("logs");     DIR_LOGS.mkdir(exist_ok=True)
-        DIR_REJECTED = Path("rejected"); DIR_REJECTED.mkdir(exist_ok=True)
-
-        for w in self.scroll_published.winfo_children():
-            w.destroy()
-        for f in sorted(DIR_LOGS.glob("publicado_*.txt"),
-                        key=lambda x: x.stat().st_mtime, reverse=True)[:12]:
-            stem = f.stem[10:]
-            ctk.CTkLabel(self.scroll_published, text=stem, font=F_SMALL,
-                         text_color=TEXT_GREEN, anchor="w",
-                         ).pack(fill="x", padx=6, pady=1)
-
-        for w in self.scroll_rejected.winfo_children():
-            w.destroy()
-        for f in sorted(DIR_REJECTED.glob("*_final.mp4"),
-                        key=lambda x: x.stat().st_mtime, reverse=True)[:8]:
-            name = f.stem[:-6]
-            ctk.CTkLabel(self.scroll_rejected, text=f"♪  {name}", font=F_SMALL,
-                         text_color=TEXT_RED, anchor="w",
-                         ).pack(fill="x", padx=6, pady=1)
-
-    # ── Pipeline ──────────────────────────────────────────────────────────────
-
-    def _on_start(self):
-        if not self._current_audio or not self._current_audio.exists():
-            self._refresh_queue()
-            return
-
-        self._reset_ui()
-
-        self._worker = PipelineWorker(
-            audio_path  = self._current_audio,
-            post        = self._post,
-            on_log      = self._append_log,
-            on_step     = self._update_step,
-            on_meta     = self._on_meta_ready,
-            on_img      = self._on_img_ready,
-            on_vid      = self._on_vid_ready,
-            on_done_ok  = self._on_finished_ok,
-            on_done_ko  = self._on_finished_ko,
-        )
-        self._worker.start()
-        self.btn_start.configure(state="disabled")
-        self._append_log(f"Pipeline iniciado: {self._current_audio.name}")
-
-    def _reset_ui(self):
-        for row in self.step_rows:
-            row.set_status("idle")
-        for btn in (self.btn_confirm_inline, self.btn_confirm_full):
-            btn.configure(state="disabled")
-        for btn in (self.btn_img_ok, self.btn_img_new, self.btn_img_del,
-                    self.btn_publish, self.btn_reject_vid):
-            btn.configure(state="disabled")
-
-        self.entry_titulo.delete(0, "end")
-        self.txt_desc.delete("1.0", "end")
-        self.entry_tags.delete(0, "end")
-        self.lbl_img_preview.configure(
-            text="Aguardando geração da imagem...", image=None
-        )
-        self.lbl_img_char.configure(text="Character: —")
-        self.lbl_img_scene.configure(text="Scene: —")
-        self.lbl_img_style.configure(text="Style: —")
-        self.lbl_vid_preview.configure(text="Aguardando vídeo...", image=None)
-        self.lbl_vid_name.configure(text="—")
-        self.vid_progress.set(0)
-        self._video_path = None
-
-    # ── Worker callbacks (already on GUI thread via _drain) ───────────────────
-
-    def _append_log(self, msg: str):
-        ts = datetime.now().strftime("%H:%M:%S")
-        self.log_box.configure(state="normal")
-        self.log_box.insert("end", f"[{ts}] {msg}\n")
-        self.log_box.see("end")
-        self.log_box.configure(state="disabled")
-
-    def _clear_log(self):
-        self.log_box.configure(state="normal")
-        self.log_box.delete("1.0", "end")
-        self.log_box.configure(state="disabled")
-
-    def _update_step(self, index: int, status: str):
-        if 0 <= index < len(self.step_rows):
-            self.step_rows[index].set_status(status)
-
-    def _on_meta_ready(self, meta: dict):
-        self.entry_titulo.delete(0, "end")
-        self.entry_titulo.insert(0, meta.get("titulo", ""))
-        self.txt_desc.delete("1.0", "end")
-        self.txt_desc.insert("1.0", meta.get("descricao", ""))
-        tags = meta.get("tags", [])
-        self.entry_tags.delete(0, "end")
-        self.entry_tags.insert(0, ", ".join(tags) if isinstance(tags, list) else str(tags))
-        for btn in (self.btn_confirm_inline, self.btn_confirm_full):
-            btn.configure(state="normal")
-        self._append_log("Metadados prontos — edite o título e confirme.")
-
-    def _on_confirm_meta(self):
-        titulo = self.entry_titulo.get().strip()
-        for btn in (self.btn_confirm_inline, self.btn_confirm_full):
-            btn.configure(state="disabled")
-        if self._worker:
-            self._worker.set_titulo(titulo)
-        self._append_log(f"Título confirmado: {titulo or '(mantido)'}")
-
-    def _on_img_ready(self, img_path: str, img_meta: dict):
-        try:
-            pil = Image.open(img_path)
-            pil.thumbnail((340, 200), Image.LANCZOS)
-            ctk_img = ctk.CTkImage(light_image=pil, dark_image=pil,
-                                   size=(pil.width, pil.height))
-            self.lbl_img_preview.configure(image=ctk_img, text="")
-            self.lbl_img_preview._image = ctk_img   # keep reference
-        except Exception:
-            self.lbl_img_preview.configure(text="Erro ao carregar imagem", image=None)
-
-        self.lbl_img_char.configure(text=f"Character: {img_meta.get('personagem','—')}")
-        self.lbl_img_scene.configure(text=f"Scene: {img_meta.get('cenario','—')}")
-        self.lbl_img_style.configure(text=f"Style: {img_meta.get('estilo','—')}")
-        for btn in (self.btn_img_ok, self.btn_img_new, self.btn_img_del):
-            btn.configure(state="normal")
-        self._append_log("Imagem pronta — avalie e decida.")
-
-    def _on_img_decision(self, decisao: str):
-        for btn in (self.btn_img_ok, self.btn_img_new, self.btn_img_del):
-            btn.configure(state="disabled")
-        if self._worker:
-            self._worker.set_decisao_imagem(decisao)
-        msgs = {"s": "Imagem aprovada.", "n": "Gerando nova imagem...", "d": "Descartado."}
-        self._append_log(msgs.get(decisao, ""))
-
-    def _on_vid_ready(self, video_path: str):
-        self._video_path = video_path
-        self.lbl_vid_name.configure(text=Path(video_path).name)
-        self.lbl_vid_preview.configure(
-            text="▶  Vídeo pronto\nAbra /review para assistir", image=None
-        )
-        self.vid_progress.set(0.6)
-        self.btn_vid_play.configure(text_color=ACCENT)
-        for btn in (self.btn_publish, self.btn_reject_vid):
-            btn.configure(state="normal")
-        self._append_log("Vídeo pronto em /review — assista e decida.")
-
-    def _on_vid_decision(self, decisao: str):
-        for btn in (self.btn_publish, self.btn_reject_vid):
-            btn.configure(state="disabled")
-        if self._worker:
-            self._worker.set_decisao_video(decisao)
-        self._append_log(
-            "Publicando no YouTube..." if decisao == "s"
-            else "Vídeo rejeitado. Devolvendo áudio ao /inbox."
-        )
-
-    def _on_finished_ok(self, url: str):
-        self._append_log(f"✓ Publicado: {url}")
-        self.vid_progress.set(1.0)
-        self.btn_start.configure(state="normal")
-        self._refresh_queue()
-        self._refresh_history()
-        self._show_dialog("Publicado!", f"Vídeo publicado com sucesso!\n\n{url}")
-
-    def _on_finished_ko(self, msg: str):
-        if msg not in ("descartado", "rejeitado"):
-            self._append_log(f"✗ Erro: {msg}")
-            self._show_dialog("Erro", msg[:300])
-        self.btn_start.configure(state="normal")
-        self._refresh_queue()
-        self._refresh_history()
-
-    def _on_open_review(self):
+@app.post("/api/open-video")
+async def api_open_video(request: Request):
+    body = await request.json()
+    path = body.get("path", "")
+    if path and Path(path).exists():
+        os.startfile(path)
+    else:
         d = Path("review")
         d.mkdir(exist_ok=True)
         subprocess.Popen(["explorer", str(d.resolve())])
+    return {"ok": True}
 
-    def _on_open_video(self):
-        if self._video_path and Path(self._video_path).exists():
-            os.startfile(self._video_path)
-        else:
-            self._on_open_review()
 
-    def _show_dialog(self, title: str, msg: str):
-        dlg = ctk.CTkToplevel(self)
-        dlg.title(title)
-        dlg.geometry("420x200")
-        dlg.configure(fg_color=BG_CARD)
-        dlg.grab_set()
-        ctk.CTkLabel(dlg, text=title, font=F_H2, text_color=ACCENT
-                     ).pack(pady=(20, 6))
-        ctk.CTkLabel(dlg, text=msg, font=F_BODY, text_color=TEXT_MAIN,
-                     wraplength=380
-                     ).pack(pady=6, padx=20)
-        ctk.CTkButton(dlg, text="OK", font=F_H2, fg_color=ACCENT,
-                      hover_color=ACCENT_HOV, text_color="#FFFFFF",
-                      width=100, height=36, corner_radius=6,
-                      command=dlg.destroy
-                      ).pack(pady=(10, 20))
+@app.post("/api/pick-file")
+async def api_pick_file():
+    loop = asyncio.get_event_loop()
+    name = await loop.run_in_executor(None, _pick_file_sync)
+    items = _get_queue_items()
+    manager.send({"type": "queue_update", "items": items})
+    return JSONResponse({"name": name})
 
-    def on_closing(self):
-        if self._worker and self._worker.is_alive():
-            self._worker.cancel()
-            self._worker.join(timeout=3)
-        self.destroy()
+
+@app.post("/api/shutdown")
+async def api_shutdown():
+    def _stop():
+        import time
+        time.sleep(0.4)
+        if _server:
+            _server.should_exit = True
+        os.kill(os.getpid(), signal.SIGTERM)
+    threading.Thread(target=_stop, daemon=True).start()
+    return {"ok": True}
+
+
+@app.websocket("/ws")
+async def ws_endpoint(websocket: WebSocket):
+    global _worker
+    await websocket.accept()
+    loop = asyncio.get_event_loop()
+    manager.connect(websocket, loop)
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            msg = json.loads(raw)
+            t   = msg.get("type")
+
+            if t == "start":
+                inbox = Path("inbox")
+                exts  = {".mp3", ".wav", ".flac", ".m4a", ".ogg"}
+                files = sorted(
+                    (f for f in inbox.iterdir() if f.is_file() and f.suffix.lower() in exts),
+                    key=lambda f: f.stat().st_mtime,
+                )
+                if not files:
+                    manager.send({"type": "log", "msg": "Inbox vazia."})
+                    continue
+                if _worker and _worker.is_alive():
+                    manager.send({"type": "log", "msg": "Pipeline já em execução."})
+                    continue
+                idx = min(msg.get("index", 0), len(files) - 1)
+                _worker = PipelineWorker(files[idx])
+                _worker.start()
+
+            elif t == "confirm_titulo" and _worker:
+                _worker.set_titulo(msg.get("titulo", ""))
+
+            elif t == "img_decision" and _worker:
+                _worker.set_decisao_imagem(msg.get("decision", ""))
+
+            elif t == "vid_decision" and _worker:
+                _worker.set_decisao_video(msg.get("decision", ""))
+
+    except WebSocketDisconnect:
+        manager.disconnect()
+    except Exception:
+        manager.disconnect()
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
-def main():
-    app = OvxrNightApp()
-    app.protocol("WM_DELETE_WINDOW", app.on_closing)
-    app.mainloop()
+def _open_browser():
+    import time
+    time.sleep(1.2)
+    webbrowser.open("http://localhost:8000")
 
 
 if __name__ == "__main__":
-    main()
+    threading.Thread(target=_open_browser, daemon=True).start()
+    config = uvicorn.Config(app, host="127.0.0.1", port=8000, log_level="warning")
+    _server = uvicorn.Server(config)
+    _server.run()
