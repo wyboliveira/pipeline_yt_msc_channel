@@ -48,11 +48,11 @@ QMainWindow, QWidget {{
     font-size: 13px;
 }}
 QGroupBox {{
-    background-color: {BG_PANEL};
+    background-color: {BG_CARD};
     border: 1px solid {BORDER};
     border-radius: 6px;
-    margin-top: 10px;
-    padding: 12px 10px 10px 10px;
+    margin-top: 20px;
+    padding: 20px 12px 12px 12px;
     font-size: 10px;
     font-weight: bold;
     color: {ACCENT};
@@ -60,9 +60,12 @@ QGroupBox {{
 }}
 QGroupBox::title {{
     subcontrol-origin: margin;
-    left: 10px;
-    top: -5px;
-    padding: 0 4px;
+    left: 12px;
+    top: -10px;
+    padding: 2px 8px;
+    background-color: {BG_PANEL};
+    border: 1px solid {BORDER};
+    border-radius: 3px;
 }}
 QListWidget {{
     background-color: {BG_CARD};
@@ -85,14 +88,14 @@ QListWidget::item:hover {{
 }}
 QLineEdit, QTextEdit {{
     background-color: {BG_INPUT};
-    border: 1px solid {BORDER};
+    border: 1px solid #3A5275;
     border-radius: 4px;
     padding: 6px 8px;
     color: {TEXT_MAIN};
     selection-background-color: {ACCENT_DIM};
 }}
 QLineEdit:focus, QTextEdit:focus {{
-    border: 1px solid {ACCENT};
+    border: 2px solid {ACCENT};
 }}
 QPushButton {{
     background-color: {BG_INPUT};
@@ -131,20 +134,43 @@ QPushButton#btn_primary:disabled {{
     font-weight: bold;
 }}
 QPushButton#btn_danger {{
-    background-color: #280F0F;
-    border-color: {TEXT_RED};
-    color: {TEXT_RED};
+    background-color: #8B1A1A;
+    border: none;
+    color: #FFFFFF;
+    font-weight: bold;
 }}
 QPushButton#btn_danger:hover {{
-    background-color: #3D1515;
+    background-color: #A82020;
+}}
+QPushButton#btn_danger:disabled {{
+    background-color: #3A1010;
+    color: {TEXT_DIM};
 }}
 QPushButton#btn_success {{
-    background-color: #0D2818;
-    border-color: {TEXT_GREEN};
-    color: {TEXT_GREEN};
+    background-color: #0A6B52;
+    border: none;
+    color: #FFFFFF;
+    font-weight: bold;
 }}
 QPushButton#btn_success:hover {{
-    background-color: #123520;
+    background-color: #0D856A;
+}}
+QPushButton#btn_success:disabled {{
+    background-color: #0A3028;
+    color: {TEXT_DIM};
+}}
+QPushButton#btn_neutral {{
+    background-color: #1E4070;
+    border: none;
+    color: #FFFFFF;
+    font-weight: 500;
+}}
+QPushButton#btn_neutral:hover {{
+    background-color: #265090;
+}}
+QPushButton#btn_neutral:disabled {{
+    background-color: #142840;
+    color: {TEXT_DIM};
 }}
 QScrollBar:vertical {{
     background: {BG_DARK};
@@ -734,6 +760,7 @@ class OvxrNightGUI(QMainWindow):
         self.btn_img_ok  = QPushButton("✓  Aprovar Imagem")
         self.btn_img_ok.setObjectName("btn_success")
         self.btn_img_new = QPushButton("↺  Gerar Nova Imagem")
+        self.btn_img_new.setObjectName("btn_neutral")
         self.btn_img_del = QPushButton("✗  Descartar Música")
         self.btn_img_del.setObjectName("btn_danger")
 
