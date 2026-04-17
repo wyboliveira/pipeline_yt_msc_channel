@@ -51,8 +51,8 @@ QGroupBox {{
     background-color: {BG_CARD};
     border: 1px solid {BORDER};
     border-radius: 6px;
-    margin-top: 20px;
-    padding: 20px 12px 12px 12px;
+    margin-top: 14px;
+    padding: 18px 12px 12px 12px;
     font-size: 10px;
     font-weight: bold;
     color: {ACCENT};
@@ -60,12 +60,11 @@ QGroupBox {{
 }}
 QGroupBox::title {{
     subcontrol-origin: margin;
+    subcontrol-position: top left;
     left: 12px;
-    top: -10px;
+    top: 2px;
     padding: 2px 8px;
-    background-color: {BG_PANEL};
-    border: 1px solid {BORDER};
-    border-radius: 3px;
+    background-color: {BG_CARD};
 }}
 QListWidget {{
     background-color: {BG_CARD};
