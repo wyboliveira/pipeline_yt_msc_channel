@@ -502,7 +502,8 @@ class OvxrNightApp(ctk.CTk):
         self.btn_start = ctk.CTkButton(
             pnl, text="▶   Iniciar Pipeline",
             font=F_H2, fg_color=ACCENT, hover_color=ACCENT_HOV,
-            text_color="#FFFFFF", height=38, corner_radius=6,
+            text_color="#FFFFFF", text_color_disabled="#FFFFFF",
+            height=38, corner_radius=6,
             state="disabled", command=self._on_start,
         )
         self.btn_start.grid(row=1, column=0, sticky="e", padx=20, pady=(0, 12))
@@ -561,7 +562,8 @@ class OvxrNightApp(ctk.CTk):
         self.btn_confirm_inline = ctk.CTkButton(
             title_row, text="Confirm Title",
             font=F_SMALL, fg_color=ACCENT, hover_color=ACCENT_HOV,
-            text_color="#FFFFFF", height=36, width=110, corner_radius=6,
+            text_color="#FFFFFF", text_color_disabled="#FFFFFF",
+            height=36, width=110, corner_radius=6,
             state="disabled", command=self._on_confirm_meta,
         )
         self.btn_confirm_inline.grid(row=0, column=1)
@@ -592,7 +594,8 @@ class OvxrNightApp(ctk.CTk):
         self.btn_confirm_full = ctk.CTkButton(
             card, text="Confirm Title",
             font=F_H2, fg_color=ACCENT, hover_color=ACCENT_HOV,
-            text_color="#FFFFFF", height=42, corner_radius=6,
+            text_color="#FFFFFF", text_color_disabled="#FFFFFF",
+            height=42, corner_radius=6,
             state="disabled", command=self._on_confirm_meta,
         )
         self.btn_confirm_full.grid(row=7, column=0, sticky="ew", padx=14, pady=(0, 14))
@@ -645,7 +648,8 @@ class OvxrNightApp(ctk.CTk):
         self.btn_img_ok = ctk.CTkButton(
             btn_row, text="Aprovar", font=F_SMALL,
             fg_color="#0A6B52", hover_color="#0D8568",
-            text_color="#FFFFFF", height=34, corner_radius=6,
+            text_color="#FFFFFF", text_color_disabled="#FFFFFF",
+            height=34, corner_radius=6,
             state="disabled", command=lambda: self._on_img_decision("s"),
         )
         self.btn_img_ok.grid(row=0, column=0, sticky="ew", padx=(0, 4))
@@ -653,7 +657,8 @@ class OvxrNightApp(ctk.CTk):
         self.btn_img_new = ctk.CTkButton(
             btn_row, text="Nova Imagem", font=F_SMALL,
             fg_color="#1E4070", hover_color="#265090",
-            text_color="#FFFFFF", height=34, corner_radius=6,
+            text_color="#FFFFFF", text_color_disabled="#FFFFFF",
+            height=34, corner_radius=6,
             state="disabled", command=lambda: self._on_img_decision("n"),
         )
         self.btn_img_new.grid(row=0, column=1, sticky="ew", padx=4)
@@ -661,7 +666,8 @@ class OvxrNightApp(ctk.CTk):
         self.btn_img_del = ctk.CTkButton(
             btn_row, text="Descartar", font=F_SMALL,
             fg_color="#7A1515", hover_color="#9A1A1A",
-            text_color="#FFFFFF", height=34, corner_radius=6,
+            text_color="#FFFFFF", text_color_disabled="#FFFFFF",
+            height=34, corner_radius=6,
             state="disabled", command=lambda: self._on_img_decision("d"),
         )
         self.btn_img_del.grid(row=0, column=2, sticky="ew", padx=(4, 0))
@@ -746,7 +752,8 @@ class OvxrNightApp(ctk.CTk):
         self.btn_publish = ctk.CTkButton(
             right, text="▶   Publicar no YouTube",
             font=F_H2, fg_color=ACCENT, hover_color=ACCENT_HOV,
-            text_color="#FFFFFF", height=42, corner_radius=6,
+            text_color="#FFFFFF", text_color_disabled="#FFFFFF",
+            height=42, corner_radius=6,
             state="disabled", command=lambda: self._on_vid_decision("s"),
         )
         self.btn_publish.grid(row=2, column=0, sticky="ew", pady=(0, 8))
@@ -754,7 +761,8 @@ class OvxrNightApp(ctk.CTk):
         self.btn_reject_vid = ctk.CTkButton(
             right, text="✗  Descartar Vídeo",
             font=F_SMALL, fg_color="#7A1515", hover_color="#9A1A1A",
-            text_color="#FFFFFF", height=36, corner_radius=6,
+            text_color="#FFFFFF", text_color_disabled="#FFFFFF",
+            height=36, corner_radius=6,
             state="disabled", command=lambda: self._on_vid_decision("n"),
         )
         self.btn_reject_vid.grid(row=3, column=0, sticky="ew")
