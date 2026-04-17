@@ -40,14 +40,14 @@ TEXT_AMBER = "#F59E0B"
 BORDER     = "#252D48"
 
 # ── Fontes ─────────────────────────────────────────────────────────────────────
-F_TITLE  = ("Segoe UI", 20, "bold")
-F_H2     = ("Segoe UI", 13, "bold")
-F_BODY   = ("Segoe UI", 12)
-F_SMALL  = ("Segoe UI", 11)
-F_LABEL  = ("Segoe UI", 10, "bold")
-F_MONO   = ("Consolas", 10)
-F_BADGE  = ("Segoe UI", 9,  "bold")
-F_ACCENT = ("Segoe UI", 10, "bold")
+F_TITLE  = ("Segoe UI", 19, "bold")
+F_H2     = ("Segoe UI", 14, "bold")
+F_BODY   = ("Segoe UI", 13, "bold")
+F_SMALL  = ("Segoe UI", 12, "bold")
+F_LABEL  = ("Segoe UI", 11, "bold")
+F_MONO   = ("Consolas", 10, "bold")
+F_BADGE  = ("Segoe UI", 10,  "bold")
+F_ACCENT = ("Segoe UI", 14, "bold")
 
 
 # ── Pipeline Worker ────────────────────────────────────────────────────────────
@@ -295,29 +295,34 @@ def _divider(parent):
 
 
 class TrackRow(ctk.CTkFrame):
-    """Linha de fila — ícone, índice.nome, data."""
+    """Linha de fila — altura fixa, ícone, índice.nome, data."""
+
+    HEIGHT = 44
 
     def __init__(self, parent, index: int, f: Path, selected: bool, **kw):
         bg = BG_ROW_SEL if selected else BG_ROW
-        super().__init__(parent, fg_color=bg, corner_radius=4, **kw)
+        super().__init__(parent, fg_color=bg, corner_radius=4,
+                         height=self.HEIGHT, **kw)
+        self.pack_propagate(False)   # altura fixa, filhos não expandem o frame
 
         if selected:
             bar = ctk.CTkFrame(self, width=3, fg_color=ACCENT, corner_radius=0)
-            bar.pack(side="left", fill="y", padx=(0, 4))
+            bar.pack(side="left", fill="y")
 
         icon_color = ACCENT if selected else TEXT_DIM
+        pad_left = 4 if selected else 10
         ctk.CTkLabel(self, text="♪", font=F_BODY, text_color=icon_color, width=22
-                     ).pack(side="left", padx=(6 if not selected else 2, 2), pady=6)
-
-        stem = f.stem
-        display = f"{index:02d}. {stem}" if len(stem) <= 26 else f"{index:02d}. {stem[:24]}…"
-        ctk.CTkLabel(self, text=display, font=F_SMALL,
-                     text_color=TEXT_MAIN if selected else TEXT_DIM, anchor="w"
-                     ).pack(side="left", fill="x", expand=True, padx=2)
+                     ).pack(side="left", padx=(pad_left, 2))
 
         date_str = datetime.fromtimestamp(f.stat().st_mtime).strftime("%d/%m/%Y")
-        ctk.CTkLabel(self, text=date_str, font=F_SMALL, text_color=TEXT_DIM, width=68
-                     ).pack(side="right", padx=6)
+        ctk.CTkLabel(self, text=date_str, font=F_SMALL, text_color=TEXT_DIM, width=72
+                     ).pack(side="right", padx=(0, 8))
+
+        stem = f.stem
+        display = f"{index:02d}. {stem}" if len(stem) <= 24 else f"{index:02d}. {stem[:22]}…"
+        ctk.CTkLabel(self, text=display, font=F_SMALL,
+                     text_color=TEXT_MAIN if selected else TEXT_DIM, anchor="w"
+                     ).pack(side="left", fill="x", padx=(2, 4))
 
 
 class StepRow(ctk.CTkFrame):
@@ -826,7 +831,7 @@ class OvxrNightApp(ctk.CTk):
 
         for i, f in enumerate(queue):
             row = TrackRow(self.queue_scroll, i + 1, f, selected=(i == 0))
-            row.pack(fill="x", padx=4, pady=2)
+            row.pack(fill="x", padx=4, pady=2, anchor="nw")
 
         n = len(queue)
         self.lbl_inbox_count.configure(
