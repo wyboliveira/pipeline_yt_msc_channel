@@ -118,14 +118,17 @@ QPushButton#btn_primary {{
     background-color: {ACCENT};
     color: #000000;
     font-weight: bold;
-    border: none;
+    border: 2px solid {ACCENT};
 }}
 QPushButton#btn_primary:hover {{
     background-color: {ACCENT_DIM};
+    border-color: {ACCENT_DIM};
 }}
 QPushButton#btn_primary:disabled {{
-    background-color: #1A3A44;
-    color: {TEXT_DIM};
+    background-color: transparent;
+    border: 2px solid {ACCENT_DIM};
+    color: {ACCENT_DIM};
+    font-weight: bold;
 }}
 QPushButton#btn_danger {{
     background-color: #2D1B1B;
@@ -579,6 +582,25 @@ class OvxrNightGUI(QMainWindow):
         self.btn_start = QPushButton("▶   Iniciar Pipeline")
         self.btn_start.setObjectName("btn_primary")
         self.btn_start.setFixedHeight(36)
+        self.btn_start.setMinimumWidth(160)
+        self.btn_start.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {ACCENT};
+                color: #000000;
+                font-weight: bold;
+                font-size: 13px;
+                border: 2px solid {ACCENT};
+                border-radius: 4px;
+                padding: 0 18px;
+            }}
+            QPushButton:hover {{ background-color: {ACCENT_DIM}; border-color: {ACCENT_DIM}; }}
+            QPushButton:pressed {{ background-color: #007A99; }}
+            QPushButton:disabled {{
+                background-color: transparent;
+                border: 2px solid {ACCENT_DIM};
+                color: {ACCENT_DIM};
+            }}
+        """)
         self.btn_start.setEnabled(False)
         self.btn_start.clicked.connect(self._on_start)
         lay.addWidget(self.btn_start)
@@ -750,6 +772,23 @@ class OvxrNightGUI(QMainWindow):
 
         self.btn_publish = QPushButton("▶   Publicar no YouTube")
         self.btn_publish.setObjectName("btn_primary")
+        self.btn_publish.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {ACCENT};
+                color: #000000;
+                font-weight: bold;
+                border: 2px solid {ACCENT};
+                border-radius: 4px;
+                padding: 7px 14px;
+            }}
+            QPushButton:hover {{ background-color: {ACCENT_DIM}; border-color: {ACCENT_DIM}; }}
+            QPushButton:pressed {{ background-color: #007A99; }}
+            QPushButton:disabled {{
+                background-color: transparent;
+                border: 2px solid {ACCENT_DIM};
+                color: {ACCENT_DIM};
+            }}
+        """)
         self.btn_reject  = QPushButton("✗  Rejeitar Vídeo")
         self.btn_reject.setObjectName("btn_danger")
 
@@ -827,6 +866,7 @@ class OvxrNightGUI(QMainWindow):
             else:
                 item = QListWidgetItem(f"   {f.name}")
                 item.setForeground(QColor(TEXT_DIM))
+            item.setToolTip(f.name)
             self.list_queue.addItem(item)
 
         running = self._worker is not None and self._worker.isRunning()
@@ -855,13 +895,16 @@ class OvxrNightGUI(QMainWindow):
             stem = f.stem[10:]  # strip "publicado_"
             item = QListWidgetItem(f"  {stem}")
             item.setForeground(QColor(TEXT_GREEN))
+            item.setToolTip(stem)
             self.list_published.addItem(item)
 
         self.list_rejected.clear()
         for f in sorted(DIR_REJECTED.glob("*_final.mp4"),
                         key=lambda x: x.stat().st_mtime, reverse=True)[:8]:
-            item = QListWidgetItem(f"  {f.stem[:-6]}")
+            name = f.stem[:-6]
+            item = QListWidgetItem(f"  {name}")
             item.setForeground(QColor(TEXT_RED))
+            item.setToolTip(name)
             self.list_rejected.addItem(item)
 
     # ── Pipeline controls ─────────────────────────────────────────────────────
