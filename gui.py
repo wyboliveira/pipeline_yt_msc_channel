@@ -27,10 +27,10 @@ from PyQt6.QtGui import QPixmap, QColor, QFont
 
 # ── Paleta de cores ────────────────────────────────────────────────────────────
 
-BG_DARK    = "#0D1117"
-BG_PANEL   = "#161B22"
-BG_CARD    = "#1C2128"
-BG_INPUT   = "#21262D"
+BG_DARK    = "#07090F"   # fundo da janela — quase preto com tint azul
+BG_PANEL   = "#0D1525"   # header bar e bordas de seção
+BG_CARD    = "#111D35"   # GroupBox / painéis de conteúdo — contraste visível
+BG_INPUT   = "#192540"   # campos de input — um tom acima do card
 ACCENT     = "#00D4FF"
 ACCENT_DIM = "#0099BB"
 TEXT_MAIN  = "#E6EDF3"
@@ -38,7 +38,7 @@ TEXT_DIM   = "#8B949E"
 TEXT_GREEN = "#3FB950"
 TEXT_RED   = "#F85149"
 TEXT_AMBER = "#D29922"
-BORDER     = "#30363D"
+BORDER     = "#1E2D48"
 
 STYLE = f"""
 QMainWindow, QWidget {{
@@ -76,12 +76,12 @@ QListWidget::item {{
     border-bottom: 1px solid {BORDER};
 }}
 QListWidget::item:selected {{
-    background-color: #1F3A4A;
+    background-color: #0E2840;
     color: {ACCENT};
     border-left: 3px solid {ACCENT};
 }}
 QListWidget::item:hover {{
-    background-color: #1A2535;
+    background-color: #0D2035;
 }}
 QLineEdit, QTextEdit {{
     background-color: {BG_INPUT};
@@ -103,11 +103,11 @@ QPushButton {{
     font-weight: 500;
 }}
 QPushButton:hover {{
-    background-color: #2D333B;
+    background-color: #1A2840;
     border-color: {ACCENT};
 }}
 QPushButton:pressed {{
-    background-color: #1F3A4A;
+    background-color: #0E2035;
 }}
 QPushButton:disabled {{
     color: {TEXT_DIM};
@@ -131,20 +131,20 @@ QPushButton#btn_primary:disabled {{
     font-weight: bold;
 }}
 QPushButton#btn_danger {{
-    background-color: #2D1B1B;
+    background-color: #280F0F;
     border-color: {TEXT_RED};
     color: {TEXT_RED};
 }}
 QPushButton#btn_danger:hover {{
-    background-color: #4A2020;
+    background-color: #3D1515;
 }}
 QPushButton#btn_success {{
-    background-color: #1A3020;
+    background-color: #0D2818;
     border-color: {TEXT_GREEN};
     color: {TEXT_GREEN};
 }}
 QPushButton#btn_success:hover {{
-    background-color: #1F4028;
+    background-color: #123520;
 }}
 QScrollBar:vertical {{
     background: {BG_DARK};
@@ -835,7 +835,7 @@ class OvxrNightGUI(QMainWindow):
         self.log_view = QTextEdit()
         self.log_view.setReadOnly(True)
         self.log_view.setStyleSheet(
-            f"background: #0A0E14; border: 1px solid {BORDER}; border-radius: 4px;"
+            f"background: {BG_DARK}; border: 1px solid {BORDER}; border-radius: 4px;"
             f" font-family: Consolas, monospace; font-size: 11px; color: {TEXT_DIM};"
             f" padding: 4px;"
         )
