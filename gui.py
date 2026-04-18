@@ -249,9 +249,10 @@ input::placeholder, textarea::placeholder { color:#4A5568; }
           <div class="sec">Image Review</div>
 
           <!-- Preview -->
-          <div id="img-area" style="background:#232840;border-radius:8px;height:190px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;">
+          <div id="img-area" style="background:#232840;border-radius:8px;height:190px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;cursor:pointer;" onclick="openLightbox()" title="Clique para expandir">
             <span id="img-placeholder" style="color:#8892A4;font-size:13px;">Aguardando geração da imagem...</span>
             <img id="img-el" src="" alt="preview" style="display:none;width:100%;height:100%;object-fit:contain;"/>
+            <div id="img-expand-hint" style="display:none;position:absolute;bottom:7px;right:8px;background:rgba(0,0,0,0.65);border-radius:4px;padding:2px 8px;font-size:11px;color:#CBD5E1;pointer-events:none;">🔍 Expandir</div>
           </div>
 
           <!-- Prompt info -->
@@ -364,6 +365,22 @@ input::placeholder, textarea::placeholder { color:#4A5568; }
 <div id="toast" style="display:none;position:fixed;bottom:20px;right:20px;z-index:9999;max-width:340px;background:#1C2138;border:1px solid #252D48;border-radius:12px;padding:14px 18px;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
   <div id="toast-title" style="font-weight:700;font-size:13px;margin-bottom:4px;"></div>
   <div id="toast-msg" style="color:#8892A4;font-size:12px;word-break:break-all;"></div>
+</div>
+
+<!-- Lightbox -->
+<div id="lightbox" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.93);" onclick="if(event.target===this)closeLightbox()">
+  <!-- Controls bar -->
+  <div style="position:absolute;top:0;left:0;right:0;display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:12px 16px;background:linear-gradient(rgba(0,0,0,0.6),transparent);z-index:1;pointer-events:none;">
+    <span style="color:#4A5568;font-size:11px;flex:1;">Scroll → zoom &nbsp;·&nbsp; Arrastar → mover &nbsp;·&nbsp; ESC → fechar</span>
+    <button class="btn btn-neutral" style="height:30px;padding:0 13px;font-size:16px;pointer-events:all;" onclick="lbZoom(0.3)" title="Zoom +">＋</button>
+    <button class="btn btn-neutral" style="height:30px;padding:0 13px;font-size:16px;pointer-events:all;" onclick="lbZoom(-0.3)" title="Zoom −">－</button>
+    <button class="btn btn-neutral" style="height:30px;padding:0 13px;font-size:12px;pointer-events:all;" onclick="lbReset()" title="Resetar zoom">1:1</button>
+    <button class="btn btn-red"     style="height:30px;padding:0 14px;font-size:13px;pointer-events:all;" onclick="closeLightbox()" title="Fechar">✕</button>
+  </div>
+  <!-- Image (centered via flex on lightbox) -->
+  <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden;" onclick="if(event.target===document.getElementById('lightbox'))closeLightbox()">
+    <img id="lb-img" src="" draggable="false" style="max-width:92vw;max-height:92vh;object-fit:contain;border-radius:6px;cursor:grab;user-select:none;transform-origin:center center;" onclick="event.stopPropagation()"/>
+  </div>
 </div>
 
 <script>
@@ -567,7 +584,7 @@ function onImgReady(m) {
   const ph  = document.getElementById('img-placeholder');
   const img = document.getElementById('img-el');
   img.src = '/img/current?t=' + Date.now();
-  img.onload  = () => { ph.style.display = 'none'; img.style.display = 'block'; };
+  img.onload  = () => { ph.style.display = 'none'; img.style.display = 'block'; document.getElementById('img-expand-hint').style.display = ''; };
   img.onerror = () => { ph.textContent = 'Erro ao carregar imagem'; };
   document.getElementById('img-char').textContent  = 'Character: ' + (m.personagem || '—');
   document.getElementById('img-scene').textContent = 'Scene: '     + (m.cenario    || '—');
@@ -620,6 +637,7 @@ function resetUI() {
   ph.style.display = '';
   img.style.display = 'none';
   img.src = '';
+  document.getElementById('img-expand-hint').style.display = 'none';
   document.getElementById('img-char').textContent  = 'Character: —';
   document.getElementById('img-scene').textContent = 'Scene: —';
   document.getElementById('img-style').textContent = 'Style: —';
@@ -661,6 +679,72 @@ async function shutdownApp() {
   await fetch('/api/shutdown', { method: 'POST' }).catch(() => {});
   document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#8892A4;font-size:16px;">Aplicação encerrada. Feche esta aba.</div>';
 }
+
+// ── Lightbox ──────────────────────────────────────────────────────────────────
+let _lbScale = 1, _lbX = 0, _lbY = 0;
+let _lbDrag = false, _lbDragAnchor = {x:0, y:0};
+
+function lbApply() {
+  document.getElementById('lb-img').style.transform =
+    `translate(${_lbX}px,${_lbY}px) scale(${_lbScale})`;
+}
+
+function openLightbox() {
+  const src = document.getElementById('img-el').src;
+  if (!src || document.getElementById('img-el').style.display === 'none') return;
+  const lb  = document.getElementById('lightbox');
+  const img = document.getElementById('lb-img');
+  img.src = src;
+  _lbScale = 1; _lbX = 0; _lbY = 0;
+  img.style.transform = '';
+  lb.style.display = 'block';
+  document.addEventListener('keydown', _lbKeyDown);
+}
+
+function closeLightbox() {
+  document.getElementById('lightbox').style.display = 'none';
+  document.removeEventListener('keydown', _lbKeyDown);
+}
+
+function _lbKeyDown(e) { if (e.key === 'Escape') closeLightbox(); }
+
+function lbZoom(delta) {
+  _lbScale = Math.max(0.25, Math.min(10, _lbScale + delta * _lbScale));
+  lbApply();
+}
+
+function lbReset() { _lbScale = 1; _lbX = 0; _lbY = 0; lbApply(); }
+
+// Zoom por scroll
+document.addEventListener('DOMContentLoaded', () => {
+  const lb  = document.getElementById('lightbox');
+  const img = document.getElementById('lb-img');
+
+  lb.addEventListener('wheel', e => {
+    if (lb.style.display === 'none') return;
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.12 : 0.89;
+    _lbScale = Math.max(0.25, Math.min(10, _lbScale * factor));
+    lbApply();
+  }, { passive: false });
+
+  // Arrastar para mover
+  img.addEventListener('mousedown', e => {
+    e.stopPropagation();
+    _lbDrag = true;
+    _lbDragAnchor = { x: e.clientX - _lbX, y: e.clientY - _lbY };
+    img.style.cursor = 'grabbing';
+  });
+  document.addEventListener('mousemove', e => {
+    if (!_lbDrag) return;
+    _lbX = e.clientX - _lbDragAnchor.x;
+    _lbY = e.clientY - _lbDragAnchor.y;
+    lbApply();
+  });
+  document.addEventListener('mouseup', () => {
+    if (_lbDrag) { _lbDrag = false; img.style.cursor = 'grab'; }
+  });
+});
 
 // ── Review Queue ───────────────────────────────────────────────────────────────
 async function loadReviewQueue() {
