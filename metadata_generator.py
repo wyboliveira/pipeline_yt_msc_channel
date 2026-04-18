@@ -98,10 +98,10 @@ Retorne SOMENTE este JSON, sem nenhum texto antes ou depois:
 {{
   "creditos": "🎵 {nome_musica} — todos os direitos reservados aos respectivos criadores.",
   "hashtags": "#slowedreverb #anime #darkmusic #melancolico #sombrio",
-  "tags": ["{nome_musica}", "{nome_musica} slowed", "{nome_musica} reverb", "slowed reverb", "anime music", "dark aesthetic", "dark music", "slowed songs", "reverb music", "emotional music"]
+  "tags": ["slowed reverb", "anime music", "dark aesthetic", "dark music", "slowed songs", "reverb music", "emotional music", "lofi", "chill music", "night music"]
 }}
 
-IMPORTANTE: o campo "tags" DEVE ser uma lista JSON com exatamente 10 strings. Responda APENAS com o JSON."""
+IMPORTANTE: o campo "tags" DEVE ser uma lista JSON com exatamente 10 strings genéricas do canal. NÃO inclua o nome da música nas tags. Responda APENAS com o JSON."""
 
     # stream=True mantém a conexão viva enquanto o modelo gera tokens,
     # evitando ReadTimeout em modelos lentos ou com raciocínio longo (<think>).
@@ -148,9 +148,9 @@ IMPORTANTE: o campo "tags" DEVE ser uma lista JSON com exatamente 10 strings. Re
     # Fallback para tags ausentes ou no formato errado
     if not isinstance(dados.get("tags"), list):
         dados["tags"] = [
-            nome_musica, f"{nome_musica} slowed", f"{nome_musica} reverb",
             "slowed reverb", "anime music", "dark aesthetic",
-            "dark music", "slowed songs", "reverb music", "emotional music",
+            "dark music", "slowed songs", "reverb music",
+            "emotional music", "lofi", "chill music", "night music",
         ]
 
     # Garante campos obrigatórios
@@ -199,9 +199,10 @@ def gerar_metadados(nome_arquivo: str) -> dict:
     )
 
     resultado = {
-        "titulo":    dados["titulo"],
-        "descricao": descricao,
-        "tags":      dados["tags"],
+        "titulo":      dados["titulo"],
+        "nome_musica": nome_musica,
+        "descricao":   descricao,
+        "tags":        dados["tags"],
     }
 
     print(f"[metadata] Título     : {resultado['titulo']}")

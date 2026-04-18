@@ -528,7 +528,7 @@ function vidDecision(d) {
 
 // ── Server callbacks ──────────────────────────────────────────────────────────
 function onMetaReady(m) {
-  document.getElementById('inp-title').value = m.titulo    || '';
+  document.getElementById('inp-title').value = m.nome_musica || '';
   document.getElementById('inp-desc').value  = m.descricao || '';
   document.getElementById('inp-tags').value  = Array.isArray(m.tags) ? m.tags.join(', ') : (m.tags || '');
   document.getElementById('btn-confirm-inline').disabled = false;
@@ -758,8 +758,11 @@ class PipelineWorker(threading.Thread):
             meta = gerar_metadados(nome)
             self._step(0, "done")
             self._log(f"  Título: {meta['titulo']}")
-            manager.send({"type": "meta_ready", "titulo": meta.get("titulo", ""),
-                          "descricao": meta.get("descricao", ""), "tags": meta.get("tags", [])})
+            manager.send({"type": "meta_ready",
+                          "titulo":      meta.get("titulo", ""),
+                          "nome_musica": meta.get("nome_musica", ""),
+                          "descricao":   meta.get("descricao", ""),
+                          "tags":        meta.get("tags", [])})
             self._evt_titulo.wait()
             if self._cancelled: devolver(); return
 

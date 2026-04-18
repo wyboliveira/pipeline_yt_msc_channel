@@ -176,7 +176,7 @@ class TestGerarMetadados:
         with patch("requests.get", return_value=ok_get), \
              patch("requests.post", return_value=ok_post):
             resultado = gerar_metadados("bohemian_rhapsody.mp3")
-        assert set(resultado.keys()) >= {"titulo", "descricao", "tags"}
+        assert set(resultado.keys()) >= {"titulo", "nome_musica", "descricao", "tags"}
 
     def test_titulo_contem_nome_canal(self):
         ok_get, ok_post = self._mock_all()
