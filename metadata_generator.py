@@ -103,16 +103,31 @@ Retorne SOMENTE este JSON, sem nenhum texto antes ou depois:
 
 IMPORTANTE: o campo "tags" DEVE ser uma lista JSON com exatamente 10 strings. Responda APENAS com o JSON."""
 
+    # stream=True mantém a conexão viva enquanto o modelo gera tokens,
+    # evitando ReadTimeout em modelos lentos ou com raciocínio longo (<think>).
     resp = requests.post(
         OLLAMA_URL,
-        json={"model": MODEL, "prompt": prompt, "stream": False},
-        timeout=180,
+        json={"model": MODEL, "prompt": prompt, "stream": True},
+        stream=True,
+        timeout=(10, 300),   # (connect, read) — 5 min para geração
     )
 
     if resp.status_code != 200:
         raise RuntimeError(f"Ollama retornou HTTP {resp.status_code}:\n{resp.text}")
 
-    resposta = resp.json().get("response", "").strip()
+    partes = []
+    for linha in resp.iter_lines():
+        if not linha:
+            continue
+        try:
+            chunk = json.loads(linha)
+        except json.JSONDecodeError:
+            continue
+        partes.append(chunk.get("response", ""))
+        if chunk.get("done"):
+            break
+
+    resposta = "".join(partes).strip()
 
     # Remove bloco de raciocínio <think>...</think> do qwen3
     resposta = re.sub(r"<think>.*?</think>", "", resposta, flags=re.DOTALL).strip()

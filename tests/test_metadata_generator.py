@@ -69,14 +69,22 @@ class TestChecarOllama:
 
 
 class TestGerarComOllama:
-    """Testa a chamada ao Ollama e o parsing da resposta."""
+    """Testa a chamada ao Ollama e o parsing da resposta (modo streaming)."""
 
-    def _mock_ollama(self, payload: dict, status: int = 200):
+    def _mock_stream(self, texto: str, status: int = 200):
+        """Simula resposta streaming do Ollama: cada caractere é um chunk JSON."""
         resp = MagicMock()
         resp.status_code = status
-        resp.json.return_value = {"response": json.dumps(payload)}
-        resp.text = json.dumps(payload)
+        resp.text = texto
+        # Divide o texto em chunks e monta linhas JSON como o Ollama faz
+        chunks = [json.dumps({"response": c, "done": False}) for c in texto]
+        chunks.append(json.dumps({"response": "", "done": True}))
+        resp.iter_lines.return_value = iter(c.encode() for c in chunks)
         return resp
+
+    def _mock_stream_payload(self, payload: dict, status: int = 200):
+        """Simula streaming de um payload JSON completo de uma vez."""
+        return self._mock_stream(json.dumps(payload), status)
 
     def test_retorna_dict_com_campos_obrigatorios(self):
         payload = {
@@ -84,7 +92,7 @@ class TestGerarComOllama:
             "hashtags": "#slowedreverb",
             "tags": ["tag1", "tag2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10"],
         }
-        with patch("requests.post", return_value=self._mock_ollama(payload)):
+        with patch("requests.post", return_value=self._mock_stream_payload(payload)):
             resultado = _gerar_com_ollama("Artista - Música")
         assert "creditos" in resultado
         assert "hashtags" in resultado
@@ -99,40 +107,28 @@ class TestGerarComOllama:
                 _gerar_com_ollama("Artista")
 
     def test_levanta_runtime_error_em_json_invalido(self):
-        resp = MagicMock()
-        resp.status_code = 200
-        resp.json.return_value = {"response": "não é json válido {{{"}
-        with patch("requests.post", return_value=resp):
+        with patch("requests.post",
+                   return_value=self._mock_stream("não é json válido {{{")):
             with pytest.raises(RuntimeError, match="JSON válido"):
                 _gerar_com_ollama("Artista")
 
     def test_remove_bloco_think_do_qwen3(self):
-        payload = {
-            "creditos": "c",
-            "hashtags": "#h",
-            "tags": ["t"] * 10,
-        }
-        resposta_com_think = f"<think>pensamento interno</think>\n{json.dumps(payload)}"
-        resp = MagicMock()
-        resp.status_code = 200
-        resp.json.return_value = {"response": resposta_com_think}
-        with patch("requests.post", return_value=resp):
+        payload = {"creditos": "c", "hashtags": "#h", "tags": ["t"] * 10}
+        texto_com_think = f"<think>pensamento interno</think>\n{json.dumps(payload)}"
+        with patch("requests.post", return_value=self._mock_stream(texto_com_think)):
             resultado = _gerar_com_ollama("Artista")
         assert isinstance(resultado["tags"], list)
 
     def test_remove_bloco_de_codigo_markdown(self):
         payload = {"creditos": "c", "hashtags": "#h", "tags": ["t"] * 10}
-        resposta_com_md = f"```json\n{json.dumps(payload)}\n```"
-        resp = MagicMock()
-        resp.status_code = 200
-        resp.json.return_value = {"response": resposta_com_md}
-        with patch("requests.post", return_value=resp):
+        texto_com_md = f"```json\n{json.dumps(payload)}\n```"
+        with patch("requests.post", return_value=self._mock_stream(texto_com_md)):
             resultado = _gerar_com_ollama("Artista")
         assert isinstance(resultado["tags"], list)
 
     def test_fallback_tags_quando_nao_lista(self):
         payload = {"creditos": "c", "hashtags": "#h", "tags": "tag1, tag2"}
-        with patch("requests.post", return_value=self._mock_ollama(payload)):
+        with patch("requests.post", return_value=self._mock_stream_payload(payload)):
             resultado = _gerar_com_ollama("Artista")
         assert isinstance(resultado["tags"], list)
 
@@ -142,13 +138,13 @@ class TestGerarComOllama:
             "hashtags": ["#slowedreverb", "#anime"],
             "tags": ["t"] * 10,
         }
-        with patch("requests.post", return_value=self._mock_ollama(payload)):
+        with patch("requests.post", return_value=self._mock_stream_payload(payload)):
             resultado = _gerar_com_ollama("Artista")
         assert isinstance(resultado["hashtags"], str)
 
     def test_levanta_erro_campo_creditos_ausente(self):
         payload = {"hashtags": "#h", "tags": ["t"] * 10}
-        with patch("requests.post", return_value=self._mock_ollama(payload)):
+        with patch("requests.post", return_value=self._mock_stream_payload(payload)):
             with pytest.raises(RuntimeError, match="'creditos'"):
                 _gerar_com_ollama("Artista")
 
@@ -157,18 +153,22 @@ class TestGerarMetadados:
     """Testa gerar_metadados — função pública completa."""
 
     def _mock_all(self, tags=None):
-        """Prepara todos os mocks necessários (Ollama check + geração)."""
+        """Prepara todos os mocks necessários (Ollama check + geração streaming)."""
         tags = tags or [f"tag{i}" for i in range(10)]
         payload = {
             "creditos": "Créditos da música",
             "hashtags": "#slowedreverb #anime",
             "tags": tags,
         }
-        ok_get  = MagicMock()
+        ok_get = MagicMock()
         ok_get.raise_for_status.return_value = None
+
+        texto = json.dumps(payload)
         ok_post = MagicMock()
         ok_post.status_code = 200
-        ok_post.json.return_value = {"response": json.dumps(payload)}
+        chunks = [json.dumps({"response": c, "done": False}).encode() for c in texto]
+        chunks.append(json.dumps({"response": "", "done": True}).encode())
+        ok_post.iter_lines.return_value = iter(chunks)
         return ok_get, ok_post
 
     def test_retorna_dict_com_titulo_descricao_tags(self):
