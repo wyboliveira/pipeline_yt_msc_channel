@@ -166,6 +166,16 @@ input::placeholder, textarea::placeholder { color:#4A5568; }
     <!-- Queue list -->
     <div id="queue-list" style="flex:1;overflow-y:auto;padding:0 10px;display:flex;flex-direction:column;gap:3px;"></div>
 
+    <!-- Review Queue -->
+    <div style="margin:6px 10px 4px;background:#1C2138;border-radius:8px;padding:10px 12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <span id="review-count" style="color:#E2E8F0;font-size:12px;font-weight:700;">REVIEW (0)</span>
+        <button class="btn btn-neutral" style="width:26px;height:26px;font-size:13px;padding:0;" onclick="openReview()" title="Abrir pasta /review">📁</button>
+      </div>
+      <div style="color:#8892A4;font-size:11px;margin-top:2px;">Prontos para publicar</div>
+    </div>
+    <div id="review-list" style="max-height:120px;overflow-y:auto;padding:0 10px 2px;display:flex;flex-direction:column;gap:3px;"></div>
+
     <hr class="hr" style="margin:8px 10px;"/>
 
     <!-- Real-Time Log -->
@@ -188,6 +198,13 @@ input::placeholder, textarea::placeholder { color:#4A5568; }
         </div>
         <button id="btn-start" class="btn btn-accent" style="height:36px;padding:0 20px;font-size:13px;flex-shrink:0;" disabled onclick="startPipeline()">▶ Iniciar Pipeline</button>
       </div>
+    </div>
+
+    <!-- Review mode bar -->
+    <div id="review-mode-bar" style="display:none;margin:0 12px 6px;background:#1A1034;border:1px solid #3D2A8A;border-radius:8px;padding:8px 14px;align-items:center;gap:10px;">
+      <span style="color:#7B5CF0;font-size:11px;font-weight:700;letter-spacing:.1em;flex-shrink:0;">MODO REVIEW</span>
+      <span id="review-video-label" style="color:#8892A4;font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">—</span>
+      <button class="btn btn-neutral" style="height:26px;padding:0 10px;font-size:11px;flex-shrink:0;" onclick="exitReviewMode()">✕ Sair</button>
     </div>
 
     <!-- Cards area -->
@@ -219,6 +236,12 @@ input::placeholder, textarea::placeholder { color:#4A5568; }
           </div>
 
           <button id="btn-confirm-full" class="btn btn-accent" style="width:100%;height:40px;font-size:13px;" disabled onclick="confirmTitle()">Confirm Title</button>
+
+          <!-- Review actions (visíveis só no modo review) -->
+          <div id="review-actions" style="display:none;flex-direction:column;gap:6px;margin-top:6px;">
+            <button id="btn-gen-meta" class="btn btn-blue" style="width:100%;height:36px;font-size:12px;" onclick="genReviewMeta()">⚡ Gerar Metadados com Ollama</button>
+            <button id="btn-publish-review" class="btn btn-accent" style="width:100%;height:40px;font-size:13px;" onclick="publishReview()">▶ Publicar da Review</button>
+          </div>
         </div>
 
         <!-- Image card -->
@@ -350,11 +373,14 @@ let reconnectTimer = null;
 let currentVideoPath = null;
 let selectedIndex = 0;
 let queueItems = [];
+let reviewMode = false;
+let selectedReviewVideo = null;
+let reviewItems = [];
 
 // ── WebSocket ─────────────────────────────────────────────────────────────────
 function connect() {
   ws = new WebSocket('ws://' + location.host + '/ws');
-  ws.onopen  = () => { setWsBadge(true);  clearTimeout(reconnectTimer); loadQueue(); loadHistory(); };
+  ws.onopen  = () => { setWsBadge(true);  clearTimeout(reconnectTimer); loadQueue(); loadHistory(); loadReviewQueue(); };
   ws.onclose = () => { setWsBadge(false); reconnectTimer = setTimeout(connect, 2500); };
   ws.onerror = () => ws.close();
   ws.onmessage = e => { const m = JSON.parse(e.data); (handlers[m.type] || (() => {}))(m); };
@@ -382,6 +408,7 @@ const handlers = {
   done_ko(m)       { onDoneKo(m.msg); },
   queue_update(m)  { renderQueue(m.items); },
   history_update(m){ renderHistory(m.published, m.rejected); },
+  review_update(m) { renderReviewQueue(m.items); },
 };
 
 // ── Log ────────────────────────────────────────────────────────────────────────
@@ -563,9 +590,9 @@ function onVidReady(m) {
 function onDoneOk(url) {
   appendLog('✓ Publicado: ' + url);
   document.getElementById('vid-progress').style.width = '100%';
-  document.getElementById('btn-start').disabled = false;
   showToast('Publicado!', url, '#0D2318', '#22C55E');
-  loadQueue(); loadHistory();
+  loadQueue(); loadHistory(); loadReviewQueue();
+  if (reviewMode) { exitReviewMode(); } else { document.getElementById('btn-start').disabled = false; }
 }
 
 function onDoneKo(msg) {
@@ -573,8 +600,9 @@ function onDoneKo(msg) {
     appendLog('✗ Erro: ' + msg);
     showToast('Erro no pipeline', msg.slice(0,260), '#2A0D0D', '#EF4444');
   }
-  document.getElementById('btn-start').disabled = false;
-  loadQueue(); loadHistory();
+  if (!reviewMode) document.getElementById('btn-start').disabled = false;
+  else { document.getElementById('btn-publish-review').disabled = false; document.getElementById('btn-gen-meta').disabled = false; }
+  loadQueue(); loadHistory(); loadReviewQueue();
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -634,6 +662,128 @@ async function shutdownApp() {
   document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#8892A4;font-size:16px;">Aplicação encerrada. Feche esta aba.</div>';
 }
 
+// ── Review Queue ───────────────────────────────────────────────────────────────
+async function loadReviewQueue() {
+  const r = await fetch('/api/review-queue');
+  const d = await r.json();
+  renderReviewQueue(d.items);
+}
+
+function renderReviewQueue(items) {
+  reviewItems = items;
+  document.getElementById('review-count').textContent = 'REVIEW (' + items.length + ')';
+  const list = document.getElementById('review-list');
+  list.innerHTML = '';
+  items.forEach(item => {
+    const row = document.createElement('div');
+    const isActive = selectedReviewVideo === item.name;
+    row.className = 'track-row' + (isActive ? ' active' : '');
+    const label = item.stem.length > 28 ? item.stem.slice(0,26) + '…' : item.stem;
+    row.innerHTML =
+      '<span style="color:' + (isActive ? '#22C55E' : '#8892A4') + ';font-size:13px;flex-shrink:0;">▶</span>' +
+      '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:600;color:' + (isActive ? '#E2E8F0' : '#8892A4') + ';">' + label + '</span>' +
+      '<span style="color:#8892A4;font-size:11px;flex-shrink:0;">' + item.date + '</span>';
+    row.onclick = () => selectReviewVideo(item);
+    list.appendChild(row);
+  });
+}
+
+function selectReviewVideo(item) {
+  selectedReviewVideo = item.name;
+  reviewMode = true;
+  renderReviewQueue(reviewItems);
+
+  const titleEl = document.getElementById('song-title');
+  titleEl.textContent = item.stem.length > 58 ? item.stem.slice(0,56) + '…' : item.stem;
+  titleEl.style.color = '#E2E8F0';
+
+  document.getElementById('review-mode-bar').style.display = 'flex';
+  document.getElementById('review-video-label').textContent = item.name;
+  document.getElementById('btn-start').disabled = true;
+
+  const niceName = item.stem
+    .replace(/_final$/, '')
+    .replace(/-slowedandreverbstudio(?:studio)?/gi, '')
+    .replace(/[_]+/g, ' ')
+    .trim();
+  document.getElementById('inp-title').value    = niceName;
+  document.getElementById('inp-desc').value     = '';
+  document.getElementById('inp-tags').value     = '';
+
+  document.getElementById('review-actions').style.display       = 'flex';
+  document.getElementById('review-actions').style.flexDirection = 'column';
+  document.getElementById('btn-confirm-inline').style.display   = 'none';
+  document.getElementById('btn-confirm-full').style.display     = 'none';
+  document.getElementById('btn-publish-review').disabled = false;
+  document.getElementById('btn-gen-meta').disabled = false;
+
+  appendLog('Review: ' + item.name + ' selecionado.');
+}
+
+function exitReviewMode() {
+  reviewMode = false;
+  selectedReviewVideo = null;
+  renderReviewQueue(reviewItems);
+
+  document.getElementById('review-mode-bar').style.display     = 'none';
+  document.getElementById('review-actions').style.display      = 'none';
+  document.getElementById('btn-confirm-inline').style.display  = '';
+  document.getElementById('btn-confirm-full').style.display    = '';
+
+  document.getElementById('inp-title').value = '';
+  document.getElementById('inp-desc').value  = '';
+  document.getElementById('inp-tags').value  = '';
+
+  if (queueItems.length) {
+    updateWorkspaceTitle();
+    document.getElementById('btn-start').disabled = false;
+  } else {
+    document.getElementById('song-title').textContent = 'Nenhum arquivo selecionado';
+    document.getElementById('song-title').style.color = '#8892A4';
+    document.getElementById('btn-start').disabled = true;
+  }
+}
+
+async function genReviewMeta() {
+  if (!selectedReviewVideo) return;
+  const btn = document.getElementById('btn-gen-meta');
+  btn.disabled = true;
+  btn.textContent = '⌛ Gerando com Ollama...';
+  try {
+    const r = await fetch('/api/gen-meta', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ video_name: selectedReviewVideo }),
+    });
+    const d = await r.json();
+    if (d.error) { appendLog('Erro: ' + d.error); return; }
+    document.getElementById('inp-title').value = d.nome_musica || '';
+    document.getElementById('inp-desc').value  = d.descricao   || '';
+    document.getElementById('inp-tags').value  = Array.isArray(d.tags) ? d.tags.join(', ') : (d.tags || '');
+    appendLog('Metadados gerados. Revise e publique.');
+  } catch(e) {
+    appendLog('Erro ao gerar metadados: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚡ Gerar Metadados com Ollama';
+  }
+}
+
+function publishReview() {
+  if (!selectedReviewVideo) return;
+  const titulo    = document.getElementById('inp-title').value.trim();
+  const descricao = document.getElementById('inp-desc').value.trim();
+  const tagsRaw   = document.getElementById('inp-tags').value.trim();
+  const tags      = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
+  if (!titulo) { appendLog('Preencha o título antes de publicar.'); return; }
+  [0,1,2,3].forEach(i => setStep(i, 'idle'));
+  setStep(3, 'running');
+  document.getElementById('btn-publish-review').disabled = true;
+  document.getElementById('btn-gen-meta').disabled = true;
+  wsSend({ type: 'publish_review', video_name: selectedReviewVideo, titulo, descricao, tags });
+  appendLog('Publicando da review: ' + selectedReviewVideo);
+}
+
 let toastTimer = null;
 function showToast(title, msg, bg, titleColor) {
   const t = document.getElementById('toast');
@@ -649,6 +799,7 @@ function showToast(title, msg, bg, titleColor) {
 
 connect();
 setInterval(loadQueue, 10000);
+setInterval(loadReviewQueue, 15000);
 </script>
 </body>
 </html>
@@ -877,6 +1028,65 @@ class PipelineWorker(threading.Thread):
             for i in range(4): self._step(i, "error")
 
 
+# ── Review Publish Worker ─────────────────────────────────────────────────────
+
+class ReviewPublishWorker(threading.Thread):
+    """Publica um vídeo já existente em /review, sem refazer o pipeline."""
+
+    def __init__(self, video_path: Path, titulo: str, descricao: str, tags: list):
+        super().__init__(daemon=True)
+        self.video_path = video_path
+        self.titulo     = titulo
+        self.descricao  = descricao
+        self.tags       = tags
+
+    def _log(self, msg: str):
+        manager.send({"type": "log", "msg": msg})
+
+    def run(self):
+        from youtube_uploader   import publicar_video
+        from metadata_generator import NOME_CANAL
+
+        try:
+            self._log(f"[Review] Publicando: {self.video_path.name}")
+            manager.send({"type": "step", "index": 3, "status": "running"})
+
+            titulo = self.titulo
+            if NOME_CANAL not in titulo:
+                titulo = f"｜ {titulo} ｜ slowed + reverb - vers {NOME_CANAL}"
+
+            resultado = publicar_video(
+                video_path=str(self.video_path),
+                titulo=titulo,
+                descricao=self.descricao,
+                tags=self.tags,
+            )
+            manager.send({"type": "step", "index": 3, "status": "done"})
+
+            DIR_LOGS = Path("logs")
+            DIR_LOGS.mkdir(exist_ok=True)
+            agora = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            (DIR_LOGS / f"publicado_{self.video_path.stem}_{agora}.txt").write_text(
+                f"Arquivo  : {self.video_path.name}\nTítulo   : {resultado['titulo']}\n"
+                f"Video ID : {resultado['video_id']}\nURL      : {resultado['url']}\n"
+                f"Horário  : {agora}\n[via Review Queue]\n",
+                encoding="utf-8",
+            )
+
+            self._log(f"  ✓ Publicado: {resultado['url']}")
+            manager.send({"type": "done_ok", "url": resultado["url"]})
+
+            pub, rej = _get_history()
+            manager.send({"type": "history_update", "published": pub, "rejected": rej})
+            manager.send({"type": "review_update",  "items": _get_review_items()})
+
+        except Exception:
+            err = traceback.format_exc()
+            self._log(f"[ERRO] {err.splitlines()[-1]}")
+            manager.send({"type": "done_ko",  "msg": err.splitlines()[-1]})
+            manager.send({"type": "step", "index": 3, "status": "error"})
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _get_queue_items() -> list:
@@ -910,6 +1120,20 @@ def _get_history() -> tuple:
         )[:8]
     ]
     return published, rejected
+
+
+def _get_review_items() -> list:
+    review = Path("review")
+    review.mkdir(exist_ok=True)
+    files = sorted(
+        (f for f in review.iterdir() if f.is_file() and f.suffix.lower() == ".mp4"),
+        key=lambda f: f.stat().st_mtime, reverse=True,
+    )
+    return [
+        {"name": f.name, "stem": f.stem,
+         "date": datetime.fromtimestamp(f.stat().st_mtime).strftime("%d/%m/%Y")}
+        for f in files
+    ]
 
 
 def _pick_file_sync() -> Optional[str]:
@@ -989,6 +1213,26 @@ async def api_open_video(request: Request):
     return {"ok": True}
 
 
+@app.get("/api/review-queue")
+async def api_review_queue():
+    return JSONResponse({"items": _get_review_items()})
+
+
+@app.post("/api/gen-meta")
+async def api_gen_meta(request: Request):
+    body = await request.json()
+    video_name = body.get("video_name", "")
+    if not video_name:
+        return JSONResponse({"error": "video_name required"}, status_code=400)
+    try:
+        from metadata_generator import gerar_metadados
+        loop = asyncio.get_event_loop()
+        meta = await loop.run_in_executor(None, gerar_metadados, video_name)
+        return JSONResponse(meta)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @app.post("/api/pick-file")
 async def api_pick_file():
     loop = asyncio.get_event_loop()
@@ -1047,6 +1291,23 @@ async def ws_endpoint(websocket: WebSocket):
 
             elif t == "vid_decision" and _worker:
                 _worker.set_decisao_video(msg.get("decision", ""))
+
+            elif t == "publish_review":
+                if _worker and _worker.is_alive():
+                    manager.send({"type": "log", "msg": "Pipeline já em execução."})
+                    continue
+                video_name = msg.get("video_name", "")
+                video_path = Path("review") / video_name
+                if not video_path.exists():
+                    manager.send({"type": "log", "msg": f"Vídeo não encontrado: {video_name}"})
+                    continue
+                _worker = ReviewPublishWorker(
+                    video_path=video_path,
+                    titulo=msg.get("titulo", ""),
+                    descricao=msg.get("descricao", ""),
+                    tags=msg.get("tags", []),
+                )
+                _worker.start()
 
     except WebSocketDisconnect:
         manager.disconnect()
