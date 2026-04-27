@@ -61,12 +61,13 @@ def _checar_ollama() -> None:
 def _limpar_nome_arquivo(nome_arquivo: str) -> str:
     """
     Extrai um nome de música legível a partir do nome do arquivo.
-    Ex: 'bohemian_rhapsody.mp3' → 'Bohemian Rhapsody'
-         'my-song (slowed).wav'  → 'My Song'
+    Ex: 'Falxce - Space Dawn (128 kbps)-slowedandreverbstudio.mp3' → 'Falxce - Space Dawn'
+         'bohemian_rhapsody.mp3'                                    → 'Bohemian Rhapsody'
+    O separador ' - ' (com espaços) entre artista e música é preservado.
     """
     nome = Path(nome_arquivo).stem
 
-    # Remove sufixos comuns adicionados manualmente
+    # Remove sufixos de slowed/reverb
     sufixos = [
         r"\s*[\(\[]\s*slowed.*?[\)\]]",
         r"\s*[\(\[]\s*reverb.*?[\)\]]",
@@ -77,10 +78,33 @@ def _limpar_nome_arquivo(nome_arquivo: str) -> str:
     for sufixo in sufixos:
         nome = re.sub(sufixo, "", nome, flags=re.IGNORECASE)
 
-    # Troca separadores por espaços e normaliza capitalização
-    nome = re.sub(r"[_\-]+", " ", nome).strip()
-    nome = re.sub(r"\s+", " ", nome)
-    nome = nome.title()
+    # Remove tags em parênteses/colchetes: qualidade de áudio e labels do YouTube
+    tags_parenteses = [
+        r"\s*[\(\[]\s*\d+\s*kbps\s*[\)\]]",
+        r"\s*[\(\[]\s*official\s*(video|audio|mv|music\s*video)?\s*[\)\]]",
+        r"\s*[\(\[]\s*youtube\s*[\)\]]",
+        r"\s*[\(\[]\s*lyric[s]?\s*[\)\]]",
+        r"\s*[\(\[]\s*music\s*video\s*[\)\]]",
+        r"\s*[\(\[]\s*visuali[zs]er\s*[\)\]]",
+        r"\s*[\(\[]\s*(hd|hq|4k|1080p|720p)\s*[\)\]]",
+        r"\s*[\(\[]\s*audio\s*[\)\]]",
+        r"\s*[\(\[]\s*full\s*(album|version)?\s*[\)\]]",
+        r"\s*[\(\[]\s*ft\.?.*?[\)\]]",
+    ]
+    for tag in tags_parenteses:
+        nome = re.sub(tag, "", nome, flags=re.IGNORECASE)
+
+    # Underscores → espaços (preserva hifens)
+    nome = nome.replace("_", " ")
+
+    # Hifens sem espaço ao redor → espaços (separadores de palavra em nomes de arquivo)
+    # Preserva ' - ' (espaço-hífen-espaço) como separador artista/música
+    nome = re.sub(r"(?<!\s)-(?!\s)", " ", nome)
+
+    # Normaliza espaços e title-case preservando o separador ' - '
+    nome = re.sub(r"\s+", " ", nome).strip()
+    partes = nome.split(" - ", 1)
+    nome = " - ".join(p.strip().title() for p in partes)
 
     return nome
 

@@ -31,6 +31,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>OvxrNight Control Center</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%230E1120'/><path d='M20 8a10 10 0 1 0 0 16 8 8 0 1 1 0-16z' fill='%238B9FE8'/></svg>"/>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
 tailwind.config = {

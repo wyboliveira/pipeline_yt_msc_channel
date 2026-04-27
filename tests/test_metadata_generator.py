@@ -22,15 +22,30 @@ class TestLimparNomeArquivo:
     """Testa a extração e limpeza do nome da música a partir do nome do arquivo."""
 
     @pytest.mark.parametrize("entrada, esperado", [
-        ("bohemian_rhapsody.mp3",           "Bohemian Rhapsody"),
-        ("my-song (slowed).wav",            "My Song"),
-        ("my-song (reverb).wav",            "My Song"),
-        ("artist - song (slowed + reverb).mp3", "Artist Song"),
-        ("track_name_here.flac",            "Track Name Here"),
-        ("song - slowed version.ogg",       "Song"),
-        ("song - reverb mix.m4a",           "Song"),
-        ("Simple Song.mp3",                 "Simple Song"),
-        ("Song [slowed].mp3",               "Song"),
+        # Separadores de palavra (underscore/hífen colado) → espaço
+        ("bohemian_rhapsody.mp3",                        "Bohemian Rhapsody"),
+        ("my-song (slowed).wav",                         "My Song"),
+        ("my-song (reverb).wav",                         "My Song"),
+        ("track_name_here.flac",                         "Track Name Here"),
+        ("Simple Song.mp3",                              "Simple Song"),
+        # Remoção de sufixos slowed/reverb
+        ("song - slowed version.ogg",                    "Song"),
+        ("song - reverb mix.m4a",                        "Song"),
+        ("Song [slowed].mp3",                            "Song"),
+        # Separador artista - música preservado
+        ("artist - song (slowed + reverb).mp3",          "Artist - Song"),
+        ("Falxce - Space Dawn (128 kbps)-slowedandreverbstudio.mp3", "Falxce - Space Dawn"),
+        ("Artista - Nome Da Musica.mp3",                 "Artista - Nome Da Musica"),
+        # Remoção de tags de qualidade
+        ("Song (128 kbps).mp3",                          "Song"),
+        ("Song (256 kbps).mp3",                          "Song"),
+        ("Song (320kbps).mp3",                           "Song"),
+        # Remoção de labels do YouTube
+        ("Song (Official Video).mp3",                    "Song"),
+        ("Song (OFFICIAL AUDIO).mp3",                    "Song"),
+        ("Song (Youtube).mp3",                           "Song"),
+        ("Artist - Song (Lyrics).mp3",                   "Artist - Song"),
+        ("Artist - Song (HD).mp3",                       "Artist - Song"),
     ])
     def test_casos_de_limpeza(self, entrada, esperado):
         resultado = _limpar_nome_arquivo(entrada)
