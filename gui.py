@@ -266,9 +266,9 @@ input::placeholder, textarea::placeholder { color:#4A5568; }
 
           <!-- Image action buttons -->
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin-top:auto;">
-            <button id="btn-img-ok"  class="btn btn-green" style="height:36px;font-size:12px;" disabled onclick="imgDecision('s')">Aprovar</button>
-            <button id="btn-img-new" class="btn btn-blue"  style="height:36px;font-size:12px;" disabled onclick="imgDecision('n')">Nova Imagem</button>
-            <button id="btn-img-del" class="btn btn-red"   style="height:36px;font-size:12px;" disabled onclick="imgDecision('d')">Descartar</button>
+            <button id="btn-img-ok"     class="btn btn-green"   style="height:36px;font-size:12px;" disabled onclick="imgDecision('s')">Aprovar</button>
+            <button id="btn-img-new"    class="btn btn-blue"    style="height:36px;font-size:12px;" disabled onclick="imgDecision('n')">Nova Imagem</button>
+            <button id="btn-img-choose" class="btn btn-neutral" style="height:36px;font-size:12px;" disabled onclick="chooseImage()">📂 Escolher</button>
           </div>
         </div>
       </div>
@@ -559,9 +559,34 @@ function confirmTitle() {
 
 function imgDecision(d) {
   wsSend({ type: 'img_decision', decision: d });
-  ['btn-img-ok','btn-img-new','btn-img-del'].forEach(id =>
+  ['btn-img-ok','btn-img-new','btn-img-choose'].forEach(id =>
     document.getElementById(id).disabled = true);
-  appendLog({ s:'Imagem aprovada.', n:'Gerando nova imagem...', d:'Descartado.' }[d] || '');
+  appendLog({ s:'Imagem aprovada.', n:'Gerando nova imagem...' }[d] || '');
+}
+
+async function chooseImage() {
+  const btn = document.getElementById('btn-img-choose');
+  btn.disabled = true;
+  btn.textContent = '⌛ Abrindo...';
+  try {
+    const r = await fetch('/api/pick-image', { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) {
+      const img = document.getElementById('img-el');
+      const ph  = document.getElementById('img-placeholder');
+      img.src = '/img/current?t=' + Date.now();
+      img.onload  = () => { ph.style.display = 'none'; img.style.display = 'block'; document.getElementById('img-expand-hint').style.display = ''; };
+      img.onerror = () => { ph.textContent = 'Erro ao carregar imagem'; };
+      appendLog('Imagem carregada: ' + d.name + ' — clique em Aprovar para continuar.');
+    } else if (!d.cancelled) {
+      appendLog('Erro ao carregar imagem: ' + (d.error || 'desconhecido'));
+    }
+  } catch(e) {
+    appendLog('Erro: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📂 Escolher';
+  }
 }
 
 function vidDecision(d) {
@@ -590,7 +615,7 @@ function onImgReady(m) {
   document.getElementById('img-char').textContent  = 'Character: ' + (m.personagem || '—');
   document.getElementById('img-scene').textContent = 'Scene: '     + (m.cenario    || '—');
   document.getElementById('img-style').textContent = 'Style: '     + (m.estilo     || '—');
-  ['btn-img-ok','btn-img-new','btn-img-del'].forEach(id =>
+  ['btn-img-ok','btn-img-new','btn-img-choose'].forEach(id =>
     document.getElementById(id).disabled = false);
   appendLog('Imagem pronta — avalie e decida.');
 }
@@ -627,7 +652,7 @@ function onDoneKo(msg) {
 function resetUI() {
   [0,1,2,3].forEach(i => setStep(i, 'idle'));
   ['btn-confirm-inline','btn-confirm-full','btn-img-ok','btn-img-new',
-   'btn-img-del','btn-publish','btn-reject'].forEach(id =>
+   'btn-img-choose','btn-publish','btn-reject'].forEach(id =>
     document.getElementById(id).disabled = true);
   document.getElementById('inp-title').value = '';
   document.getElementById('inp-desc').value  = '';
@@ -1221,6 +1246,36 @@ def _get_review_items() -> list:
     ]
 
 
+def _pick_image_sync() -> dict:
+    """Abre dialog de imagem em assets/images e copia para processing/imagem_gerada.png."""
+    assets_dir = Path("assets/images").resolve()
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    assets_str = str(assets_dir).replace("\\", "\\\\")
+
+    ps = (
+        "Add-Type -AssemblyName System.Windows.Forms; "
+        "$d = New-Object System.Windows.Forms.OpenFileDialog; "
+        "$d.Filter = 'Image Files|*.png;*.jpg;*.jpeg;*.webp|All Files|*.*'; "
+        f"$d.InitialDirectory = '{assets_str}'; "
+        "$d.Title = 'Selecionar imagem para o vídeo'; "
+        "if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $d.FileName }"
+    )
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps],
+            capture_output=True, text=True, timeout=120,
+        )
+        path = r.stdout.strip()
+        if path and Path(path).exists():
+            dest = Path("processing") / "imagem_gerada.png"
+            Path("processing").mkdir(exist_ok=True)
+            shutil.copy2(path, dest)
+            return {"ok": True, "name": Path(path).name}
+    except Exception as e:
+        return {"error": str(e)}
+    return {"cancelled": True}
+
+
 def _pick_file_sync() -> Optional[str]:
     """Abre dialog nativo do Windows via PowerShell e copia o arquivo para /inbox."""
     ps = (
@@ -1325,6 +1380,13 @@ async def api_pick_file():
     items = _get_queue_items()
     manager.send({"type": "queue_update", "items": items})
     return JSONResponse({"name": name})
+
+
+@app.post("/api/pick-image")
+async def api_pick_image():
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, _pick_image_sync)
+    return JSONResponse(result)
 
 
 @app.post("/api/shutdown")

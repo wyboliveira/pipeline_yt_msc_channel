@@ -105,7 +105,7 @@ Paleta de cores definida no `tailwind.config`: `app`, `panel`, `card`, `inp`, `r
 |---|---|---|
 | `start` | `index` | Inicia pipeline no arquivo selecionado |
 | `confirm_titulo` | `titulo` | Confirma/edita o título gerado |
-| `img_decision` | `decision` (`s`/`n`/`d`) | Aprovar / Nova imagem / Descartar |
+| `img_decision` | `decision` (`s`/`n`) | Aprovar / Nova imagem |
 | `vid_decision` | `decision` (`s`/`n`) | Publicar / Rejeitar vídeo |
 
 ---
@@ -121,6 +121,7 @@ Paleta de cores definida no `tailwind.config`: `app`, `panel`, `card`, `inp`, `r
 | `/api/open-review` | POST | Abre pasta `/review` no Explorer |
 | `/api/open-video` | POST | Abre vídeo específico no player padrão |
 | `/api/pick-file` | POST | Dialog nativo via PowerShell para adicionar áudio |
+| `/api/pick-image` | POST | Dialog nativo para escolher imagem — abre em `assets/images/`, copia para `processing/imagem_gerada.png` |
 | `/api/shutdown` | POST | Encerra o servidor |
 
 ---

@@ -73,7 +73,7 @@ A interface abre automaticamente em `http://localhost:8000`.
 
 1. Selecionar o arquivo na fila e clicar em **Start**
 2. Revisar e ajustar o título gerado → **Confirmar**
-3. Avaliar a imagem gerada → **Aprovar** / **Nova imagem** / **Descartar**
+3. Avaliar a imagem gerada → **Aprovar** / **Nova imagem** / **📂 Escolher** (abre `assets/images/` para usar imagem própria)
 4. Assistir o vídeo → **Publicar** / **Rejeitar**
 
 > **Regra de segurança:** o áudio só é removido do `inbox/` quando publicado com sucesso. Em qualquer rejeição ou erro, o arquivo retorna automaticamente à fila.
@@ -122,6 +122,8 @@ RGB Split (aberração cromática) aplicado periodicamente por padrão.
 ### `metadata_generator.py`
 Gera título, descrição e tags usando **Ollama local** (`qwen3:1.7b`) — sem custo de API.
 Formato do título: `｜ Artista - Música ｜ slowed + reverb - vers OvxrNight`
+
+Tags e hashtags são **embaralhadas a cada geração** a partir de dois pools curados (58 tags YouTube + 51 hashtags de descrição), garantindo variedade entre vídeos sem repetição de combinações.
 
 **Convenção de nome de arquivo:** salvar os áudios no formato `Artista - Nome da Música (qualidade)-slowedandreverbstudio.mp3`.
 O separador ` - ` entre artista e música é preservado no título. Tags como `(128 kbps)`, `(Official Video)`, `(Youtube)` são removidas automaticamente.

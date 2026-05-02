@@ -15,6 +15,7 @@ Uso direto:
 
 import sys
 import json
+import random
 import re
 import requests
 from pathlib import Path
@@ -27,6 +28,44 @@ from pathlib import Path
 OLLAMA_URL   = "http://localhost:11434/api/generate"
 MODEL        = "qwen3:1.7b"
 NOME_CANAL   = "OvxrNight"
+
+# Pool de tags YouTube (plain text, pode ter espaço)
+TAG_POOL = [
+    "slowed reverb", "slowed songs", "reverb music", "slowed and reverbed",
+    "dark music", "dark aesthetic", "dark anime", "dark vibes", "dark chill",
+    "dark ambient", "dark house", "dark beats",
+    "chill music", "chill vibes", "chill house", "chill girl",
+    "anime music", "anime girl", "anime aesthetic", "anime art",
+    "lofi music", "lo fi", "lofi chill", "lofi beats",
+    "ambient music", "atmospheric music", "ambient chill",
+    "night music", "night vibes", "nocturnal music",
+    "sad music", "emotional music", "melancholic music", "introspective music",
+    "relaxing music", "soothing music", "dreamy music", "ethereal music",
+    "moody music", "moody vibes", "moody aesthetic",
+    "deep house", "house music", "underground music",
+    "bass music", "bass vibes",
+    "slowedreverb", "animegirl", "darkchill", "darkmusic", "chillmusic",
+    "lofimusic", "darkambient", "chillvibes", "animeaesthetic",
+    "housemusic", "deephouse", "darkgirl", "gloomypop",
+]
+
+# Pool de hashtags para a descrição (sem espaços, formato #tag)
+HASHTAG_POOL = [
+    "#slowedreverb", "#slowed", "#reverb", "#sloweddown",
+    "#anime", "#animegirl", "#animegirls", "#animeaesthetic", "#animeart",
+    "#darkmusic", "#darkaesthetic", "#darkchill", "#darkambient", "#darkvibes",
+    "#darkgirl", "#darkanime", "#darkhouse",
+    "#chillmusic", "#chillvibes", "#chillgirl", "#chillhouse",
+    "#lofi", "#lofimusic", "#lofichill", "#lofibeats",
+    "#ambient", "#ambientmusic", "#atmospheric",
+    "#housemusic", "#deephouse", "#darkbeats",
+    "#nightmusic", "#nightvibes", "#nocturnal",
+    "#sadmusic", "#emotional", "#melancholic", "#introspective",
+    "#relaxing", "#soothing", "#dreamy", "#ethereal",
+    "#moody", "#moodmusic", "#moodygirl",
+    "#bass", "#underground", "#gothic", "#cinematic",
+    "#animegirl", "#darkgirl", "#aestheticgirl",
+]
 
 DESCRICAO_TEMPLATE = """\
 {titulo}
@@ -120,12 +159,10 @@ Gere os metadados para o vídeo da música: "{nome_musica}"
 
 Retorne SOMENTE este JSON, sem nenhum texto antes ou depois:
 {{
-  "creditos": "🎵 {nome_musica} — todos os direitos reservados aos respectivos criadores.",
-  "hashtags": "#slowedreverb #anime #darkmusic #melancolico #sombrio",
-  "tags": ["slowed reverb", "anime music", "dark aesthetic", "dark music", "slowed songs", "reverb music", "emotional music", "lofi", "chill music", "night music"]
+  "creditos": "🎵 {nome_musica} — todos os direitos reservados aos respectivos criadores."
 }}
 
-IMPORTANTE: o campo "tags" DEVE ser uma lista JSON com exatamente 10 strings genéricas do canal. NÃO inclua o nome da música nas tags. Responda APENAS com o JSON."""
+Responda APENAS com o JSON."""
 
     # stream=True mantém a conexão viva enquanto o modelo gera tokens,
     # evitando ReadTimeout em modelos lentos ou com raciocínio longo (<think>).
@@ -165,22 +202,8 @@ IMPORTANTE: o campo "tags" DEVE ser uma lista JSON com exatamente 10 strings gen
             f"Resposta do Ollama não é JSON válido:\n{resposta}\n\nErro: {e}"
         )
 
-    # Normaliza hashtags: aceita lista ou string
-    if isinstance(dados.get("hashtags"), list):
-        dados["hashtags"] = " ".join(dados["hashtags"])
-
-    # Fallback para tags ausentes ou no formato errado
-    if not isinstance(dados.get("tags"), list):
-        dados["tags"] = [
-            "slowed reverb", "anime music", "dark aesthetic",
-            "dark music", "slowed songs", "reverb music",
-            "emotional music", "lofi", "chill music", "night music",
-        ]
-
-    # Garante campos obrigatórios
-    for chave in ("creditos", "hashtags"):
-        if chave not in dados:
-            raise RuntimeError(f"Campo '{chave}' ausente na resposta:\n{dados}")
+    if "creditos" not in dados:
+        raise RuntimeError(f"Campo 'creditos' ausente na resposta:\n{dados}")
 
     return dados
 
@@ -213,20 +236,22 @@ def gerar_metadados(nome_arquivo: str) -> dict:
     print(f"[metadata] Gerando metadados para: {nome_musica}")
     dados = _gerar_com_ollama(nome_musica)
 
-    # Título montado diretamente — não depende do modelo para isso
     dados["titulo"] = f"｜ {nome_musica} ｜ slowed + reverb - vers {NOME_CANAL}"
+
+    tags     = random.sample(TAG_POOL, 10)
+    hashtags = " ".join(random.sample(HASHTAG_POOL, 7))
 
     descricao = DESCRICAO_TEMPLATE.format(
         titulo=dados["titulo"],
         creditos=dados["creditos"],
-        hashtags=dados["hashtags"],
+        hashtags=hashtags,
     )
 
     resultado = {
         "titulo":      dados["titulo"],
         "nome_musica": nome_musica,
         "descricao":   descricao,
-        "tags":        dados["tags"],
+        "tags":        tags,
     }
 
     print(f"[metadata] Título     : {resultado['titulo']}")
