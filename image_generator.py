@@ -58,23 +58,23 @@ PERSONAGENS = [
     # — Místicas e sobrenaturais (femininas) —
     "an ethereal anime priestess with white robes and closed eyes",
     "a cursed anime oracle wrapped in dark silk, her eyes replaced by glowing runes",
-    "an ancient anime sorceress with white hair floating in a void, surrounded by orbiting dark crystals",
+    "an ancient anime sorceress with pretty color hair floating in a void, surrounded by orbiting dark crystals",
     "a pale anime shrine maiden with hollow eyes, holding a lantern that casts no light",
 
     # — Femininas: beleza misteriosa e serena —
     "a melancholic anime girl with long black hair sitting with her knees to her chest",
     "a serene anime girl with pale skin and violet eyes, floating underwater among black petals",
-    "a graceful anime girl with waist-length white hair, standing barefoot in shallow dark water",
+    "a graceful anime girl with waist-length blonde hair, standing barefoot in shallow dark water",
     "a quiet anime girl with closed eyes and flower petals tangled in her silver hair",
     "an elegant anime woman in a torn black dress, sitting still while ravens circle around her",
     "a dreamy anime girl with long silver lashes, face half-buried in a bouquet of dead roses",
 
     # — Femininas: sensualidade contida e pureza sombria —
     "a composed anime woman with deep red eyes and bare shoulders, staring into a dark mirror",
-    "a mysterious anime femme with a translucent veil obscuring half her face, surrounded by candle smoke",
+    "a mysterious anime femme with a translucent veil obscuring half her face, surrounded by misterious smoke",
     "a pure anime girl in a white burial gown walking through falling black ash, eyes cast downward",
     "an ethereal anime woman with luminous skin and black tears streaming down her face",
-    "a lone anime girl with long dark hair covering one eye, holding a cracked music box",
+    "a lone anime girl with long dark hair covering one eye, holding a traditional mage object",
 
     # — Masculinos: guerreiros e combatentes —
     "a lone dark anime warrior in tattered black armor, sword resting on his shoulder, walking through ruins",
@@ -94,7 +94,7 @@ PERSONAGENS = [
     # — Masculinos: solitários e melancólicos —
     "a solitary androgynous anime figure with long pale hair, playing a silent violin in the rain",
     "a brooding anime young man with golden eyes, leaning against a cold stone wall in darkness",
-    "a silent anime boy with white hair and dark feathered wings, sitting on a ruined altar",
+    "a silent anime boy with red or black hair and dark feathered wings, sitting on a ruined altar",
     "a weary anime traveler sitting alone at a dying campfire, staring into the embers",
 ]
 
