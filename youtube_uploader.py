@@ -122,7 +122,7 @@ def _fazer_upload(
     """
     body = {
         "snippet": {
-            "title":       titulo,
+            "title":       titulo[:100],
             "description": descricao,
             "tags":        tags,
             "categoryId":  CATEGORIA_MUSICA,
