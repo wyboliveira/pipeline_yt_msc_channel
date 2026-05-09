@@ -198,7 +198,6 @@ class TestPipelineWorkerFluxoCompleto:
                        return_value=(str(tmp_path / "processing" / "imagem_gerada.png"), img_meta_fake)), \
                  patch("ken_burns.aplicar_ken_burns", side_effect=lambda **kw: fake_ken_burns(**kw)), \
                  patch("metadata_generator.gerar_metadados", return_value=meta_fake), \
-                 patch("metadata_generator._checar_ollama"), \
                  patch("youtube_uploader.publicar_video", side_effect=lambda **kw: fake_publicar(**kw)), \
                  patch("subprocess.run", side_effect=fake_subprocess):
 
@@ -235,8 +234,7 @@ class TestPipelineWorkerFluxoCompleto:
         worker = PipelineWorker(audio)
 
         try:
-            with patch("metadata_generator.gerar_metadados", side_effect=fake_gerar_metadados), \
-                 patch("metadata_generator._checar_ollama"):
+            with patch("metadata_generator.gerar_metadados", side_effect=fake_gerar_metadados):
                 worker.start()
                 # Cancela logo após iniciar
                 threading.Timer(0.02, worker.cancel).start()
@@ -280,7 +278,6 @@ class TestPipelineWorkerFluxoCompleto:
             with patch("image_generator.gerar_imagem",
                        return_value=(str(tmp_path / "processing" / "imagem_gerada.png"), img_meta_fake)), \
                  patch("metadata_generator.gerar_metadados", return_value=meta_fake), \
-                 patch("metadata_generator._checar_ollama"), \
                  patch("subprocess.run", side_effect=fake_subprocess):
                 (tmp_path / "processing" / "imagem_gerada.png").write_bytes(b"\x89PNG" + b"\x00" * 32)
                 worker.start()

@@ -4,7 +4,6 @@
 
 - **Backend:** FastAPI + Uvicorn, Python 3.11+
 - **Frontend:** HTML inline em `gui.py` (sem arquivos estáticos externos), Tailwind CSS via CDN
-- **AI local:** Ollama (`qwen3:1.7b`)
 - **APIs externas:** Leonardo.ai (imagem), YouTube Data API v3 (upload OAuth 2.0)
 - **Vídeo:** FFmpeg (deve estar no PATH)
 - **Testes:** pytest, sem banco real, sem chamadas externas reais (tudo mockado)
@@ -19,7 +18,7 @@
 | `pipeline.py` | Worker do pipeline (chamado pela GUI em thread separada) |
 | `image_generator.py` | Geração de imagem via Leonardo.ai API |
 | `ken_burns.py` | Efeito de vídeo via FFmpeg zoompan |
-| `metadata_generator.py` | Geração de título/descrição/tags via Ollama |
+| `metadata_generator.py` | Geração de título/descrição/tags (local, sem IA) |
 | `youtube_uploader.py` | Upload para YouTube Data API v3 com OAuth 2.0 |
 | `tests/` | Suite pytest — um arquivo por módulo |
 | `pyproject.toml` | Configuração do pytest |
@@ -143,4 +142,4 @@ python -m pytest -x       # para no primeiro erro
 python -m pytest --cov    # com cobertura (requer pytest-cov)
 ```
 
-Um arquivo de teste por módulo. Mocks via `unittest.mock.patch`. Sem chamadas reais a Ollama, Leonardo ou YouTube.
+Um arquivo de teste por módulo. Mocks via `unittest.mock.patch`. Sem chamadas reais a Leonardo ou YouTube.

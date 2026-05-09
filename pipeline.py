@@ -166,7 +166,7 @@ def processar_arquivo(audio_path: Path) -> bool:
 
     try:
         # [1] Metadados (gerado uma vez por música)
-        print("\n[1/4] Gerando metadados (Ollama)...")
+        print("\n[1/4] Gerando metadados...")
         meta = gerar_metadados(nome)
 
         # Edição do nome da música antes de prosseguir

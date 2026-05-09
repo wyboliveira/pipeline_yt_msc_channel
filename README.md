@@ -12,7 +12,7 @@ O fluxo combina uma etapa manual (escolha e processamento da música) com um pip
 A interface web roda localmente e guia cada etapa com aprovação manual nas decisões críticas — imagem gerada e vídeo final. Tudo que pode ser automatizado, é. Tudo que exige curadoria, para e espera.
 
 ```
-Música (manual)  →  Metadados (Ollama)  →  Imagem (Leonardo.ai)
+Música (manual)  →  Metadados (local)  →  Imagem (Leonardo.ai)
                                               ↓ aprovação
                                          Vídeo (FFmpeg Ken Burns)
                                               ↓ aprovação
@@ -33,7 +33,6 @@ pip install fastapi "uvicorn[standard]" requests \
 ### 2. Ferramentas externas
 
 - **FFmpeg** — [ffmpeg.org/download.html](https://ffmpeg.org/download.html) → adicionar ao PATH
-- **Ollama** — [ollama.ai](https://ollama.ai) → após instalar: `ollama pull qwen3:1.7b`
 
 ### 3. Variáveis de ambiente
 
@@ -89,7 +88,7 @@ slowed-reverb-channel/
 ├── pipeline.py             ← worker do pipeline (chamado pela GUI)
 ├── image_generator.py      ← geração de imagem via Leonardo.ai
 ├── ken_burns.py            ← efeito de vídeo via FFmpeg
-├── metadata_generator.py   ← geração de metadados via Ollama
+├── metadata_generator.py   ← geração de metadados (local, sem IA)
 ├── youtube_uploader.py     ← upload via YouTube Data API v3
 │
 ├── tests/                  ← suite de testes (pytest)
@@ -120,7 +119,7 @@ Produz MP4 1920×1080 @ 60fps a partir de imagem estática usando **FFmpeg zoomp
 RGB Split (aberração cromática) aplicado periodicamente por padrão.
 
 ### `metadata_generator.py`
-Gera título, descrição e tags usando **Ollama local** (`qwen3:1.7b`) — sem custo de API.
+Gera título, descrição e tags **localmente, sem IA e sem custo de API**.
 Formato do título: `｜ Artista - Música ｜ slowed + reverb - vers OvxrNight`
 
 Tags e hashtags são **embaralhadas a cada geração** a partir de dois pools curados (58 tags YouTube + 51 hashtags de descrição), garantindo variedade entre vídeos sem repetição de combinações.
@@ -142,7 +141,7 @@ python -m pytest                          # todos os testes
 python -m pytest --cov --cov-report=term-missing  # com cobertura
 ```
 
-144 testes cobrindo todos os módulos — sem chamadas reais a APIs externas.
+148 testes cobrindo todos os módulos — sem chamadas reais a APIs externas.
 
 ---
 
@@ -153,5 +152,4 @@ python -m pytest --cov --cov-report=term-missing  # com cobertura
 | Leonardo.ai Console | https://app.leonardo.ai |
 | Google Cloud Console | https://console.cloud.google.com |
 | YouTube Studio | https://studio.youtube.com |
-| Ollama | https://ollama.ai |
 | slowed+reverb studio | https://slowedandreverb.studio |

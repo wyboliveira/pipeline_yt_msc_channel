@@ -1,12 +1,7 @@
 """
 metadata_generator.py
 Módulo de geração de metadados para o pipeline slowed-reverb-channel.
-Usa o Ollama local (qwen3:4b) para gerar título, descrição e tags
-a partir do nome do arquivo de áudio. Sem custos de API.
-
-Requisito:
-    Ollama rodando localmente com o modelo qwen3:4b instalado.
-    Instalar modelo: ollama pull qwen3:4b
+Gera título, descrição e tags a partir do nome do arquivo de áudio.
 
 Uso direto:
     python metadata_generator.py bohemian_rhapsody.mp3
@@ -14,10 +9,8 @@ Uso direto:
 """
 
 import sys
-import json
 import random
 import re
-import requests
 from pathlib import Path
 
 
@@ -25,8 +18,6 @@ from pathlib import Path
 # Configuração
 # ---------------------------------------------------------------------------
 
-OLLAMA_URL   = "http://localhost:11434/api/generate"
-MODEL        = "qwen3:1.7b"
 NOME_CANAL   = "OvxrNight"
 
 # Pool de tags YouTube (plain text, pode ter espaço)
@@ -85,18 +76,6 @@ DESCRICAO_TEMPLATE = """\
 # Funções auxiliares
 # ---------------------------------------------------------------------------
 
-def _checar_ollama() -> None:
-    """Verifica se o Ollama está acessível antes de fazer a chamada."""
-    try:
-        resp = requests.get("http://localhost:11434", timeout=3)
-        resp.raise_for_status()
-    except Exception:
-        raise RuntimeError(
-            "Ollama não está acessível em http://localhost:11434\n"
-            "Inicie o Ollama e tente novamente."
-        )
-
-
 def _limpar_nome_arquivo(nome_arquivo: str) -> str:
     """
     Extrai um nome de música legível a partir do nome do arquivo.
@@ -148,66 +127,6 @@ def _limpar_nome_arquivo(nome_arquivo: str) -> str:
     return nome
 
 
-def _gerar_com_ollama(nome_musica: str) -> dict:
-    """
-    Chama o Ollama local e retorna dict com titulo, creditos, hashtags, tags.
-    """
-    prompt = f"""Você é o assistente de um canal do YouTube com estética anime sombria e melancólica.
-O canal publica versões "slowed + reverb" de músicas. O tom é épico, melancólico e introspectivo.
-
-Gere os metadados para o vídeo da música: "{nome_musica}"
-
-Retorne SOMENTE este JSON, sem nenhum texto antes ou depois:
-{{
-  "creditos": "🎵 {nome_musica} — todos os direitos reservados aos respectivos criadores."
-}}
-
-Responda APENAS com o JSON."""
-
-    # stream=True mantém a conexão viva enquanto o modelo gera tokens,
-    # evitando ReadTimeout em modelos lentos ou com raciocínio longo (<think>).
-    resp = requests.post(
-        OLLAMA_URL,
-        json={"model": MODEL, "prompt": prompt, "stream": True},
-        stream=True,
-        timeout=(10, 300),   # (connect, read) — 5 min para geração
-    )
-
-    if resp.status_code != 200:
-        raise RuntimeError(f"Ollama retornou HTTP {resp.status_code}:\n{resp.text}")
-
-    partes = []
-    for linha in resp.iter_lines():
-        if not linha:
-            continue
-        try:
-            chunk = json.loads(linha)
-        except json.JSONDecodeError:
-            continue
-        partes.append(chunk.get("response", ""))
-        if chunk.get("done"):
-            break
-
-    resposta = "".join(partes).strip()
-
-    # Remove bloco de raciocínio <think>...</think> do qwen3
-    resposta = re.sub(r"<think>.*?</think>", "", resposta, flags=re.DOTALL).strip()
-    resposta = re.sub(r"^```(?:json)?\s*", "", resposta)
-    resposta = re.sub(r"\s*```$", "", resposta)
-
-    try:
-        dados = json.loads(resposta)
-    except json.JSONDecodeError as e:
-        raise RuntimeError(
-            f"Resposta do Ollama não é JSON válido:\n{resposta}\n\nErro: {e}"
-        )
-
-    if "creditos" not in dados:
-        raise RuntimeError(f"Campo 'creditos' ausente na resposta:\n{dados}")
-
-    return dados
-
-
 # ---------------------------------------------------------------------------
 # Função principal
 # ---------------------------------------------------------------------------
@@ -225,30 +144,24 @@ def gerar_metadados(nome_arquivo: str) -> dict:
             titulo    — título formatado para o YouTube
             descricao — descrição completa com créditos, CTA e hashtags
             tags      — lista de strings para o YouTube
-
-    Raises:
-        EnvironmentError: API key não configurada.
-        RuntimeError:     Falha na chamada à API ou resposta inválida.
     """
-    _checar_ollama()
     nome_musica = _limpar_nome_arquivo(nome_arquivo)
 
     print(f"[metadata] Gerando metadados para: {nome_musica}")
-    dados = _gerar_com_ollama(nome_musica)
 
-    dados["titulo"] = f"｜ {nome_musica} ｜ slowed + reverb - vers {NOME_CANAL}"
-
+    titulo   = f"｜ {nome_musica} ｜ slowed + reverb - vers {NOME_CANAL}"
+    creditos = f"🎵 {nome_musica} — todos os direitos reservados aos respectivos criadores."
     tags     = random.sample(TAG_POOL, 10)
     hashtags = " ".join(random.sample(HASHTAG_POOL, 7))
 
     descricao = DESCRICAO_TEMPLATE.format(
-        titulo=dados["titulo"],
-        creditos=dados["creditos"],
+        titulo=titulo,
+        creditos=creditos,
         hashtags=hashtags,
     )
 
     resultado = {
-        "titulo":      dados["titulo"],
+        "titulo":      titulo,
         "nome_musica": nome_musica,
         "descricao":   descricao,
         "tags":        tags,

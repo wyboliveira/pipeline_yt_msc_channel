@@ -240,7 +240,7 @@ input::placeholder, textarea::placeholder { color:#4A5568; }
 
           <!-- Review actions (visíveis só no modo review) -->
           <div id="review-actions" style="display:none;flex-direction:column;gap:6px;margin-top:6px;">
-            <button id="btn-gen-meta" class="btn btn-blue" style="width:100%;height:36px;font-size:12px;" onclick="genReviewMeta()">⚡ Gerar Metadados com Ollama</button>
+            <button id="btn-gen-meta" class="btn btn-blue" style="width:100%;height:36px;font-size:12px;" onclick="genReviewMeta()">⚡ Gerar Metadados</button>
             <button id="btn-publish-review" class="btn btn-accent" style="width:100%;height:40px;font-size:13px;" onclick="publishReview()">▶ Publicar da Review</button>
           </div>
         </div>
@@ -858,7 +858,7 @@ async function genReviewMeta() {
   if (!selectedReviewVideo) return;
   const btn = document.getElementById('btn-gen-meta');
   btn.disabled = true;
-  btn.textContent = '⌛ Gerando com Ollama...';
+  btn.textContent = '⌛ Gerando metadados...';
   try {
     const r = await fetch('/api/gen-meta', {
       method: 'POST',
@@ -875,7 +875,7 @@ async function genReviewMeta() {
     appendLog('Erro ao gerar metadados: ' + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = '⚡ Gerar Metadados com Ollama';
+    btn.textContent = '⚡ Gerar Metadados';
   }
 }
 
