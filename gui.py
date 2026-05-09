@@ -132,6 +132,7 @@ input::placeholder, textarea::placeholder { color:#4A5568; }
 <div style="background:#151829; border-bottom:1px solid #252D48; padding:10px 18px; display:flex; align-items:center; gap:10px; flex-shrink:0;">
   <span style="color:#7B5CF0;font-weight:900;font-size:13px;letter-spacing:.14em;">OVXRNIGHT</span>
   <span style="color:#E2E8F0;font-weight:700;font-size:15px;flex:1;">Control Center</span>
+  <button id="btn-reauth" class="btn btn-neutral" style="height:28px;padding:0 12px;font-size:12px;" onclick="reauthYouTube()" title="Renovar autenticação do YouTube">🔑 YouTube</button>
   <button class="btn btn-neutral" style="height:28px;padding:0 12px;font-size:12px;" onclick="shutdownApp()" title="Encerrar aplicação">⏻ Encerrar</button>
   <span id="ws-badge" class="badge" style="background:#0D2318;color:#22C55E;font-size:11px;">● CONNECTED</span>
 </div>
@@ -427,6 +428,10 @@ const handlers = {
   queue_update(m)  { renderQueue(m.items); },
   history_update(m){ renderHistory(m.published, m.rejected); },
   review_update(m) { renderReviewQueue(m.items); },
+  reauth_done(m)   {
+    const btn = document.getElementById('btn-reauth');
+    if (btn) { btn.disabled = false; btn.textContent = '🔑 YouTube'; }
+  },
 };
 
 // ── Log ────────────────────────────────────────────────────────────────────────
@@ -698,6 +703,27 @@ async function pickFile() {
   } catch(e) { /* ignore */ }
   btn.disabled = false;
   btn.textContent = '📂 Adicionar arquivo ao inbox';
+}
+
+async function reauthYouTube() {
+  if (!confirm('Isso vai apagar o token atual e abrir o navegador para autorizar o YouTube novamente. Continuar?')) return;
+  const btn = document.getElementById('btn-reauth');
+  btn.disabled = true;
+  btn.textContent = '⌛ Aguardando...';
+  try {
+    const r = await fetch('/api/reauth-youtube', { method: 'POST' });
+    const d = await r.json();
+    if (d.error) {
+      appendLog('Erro: ' + d.error);
+      btn.disabled = false;
+      btn.textContent = '🔑 YouTube';
+    }
+    // sucesso: botão reativado pelo WebSocket reauth_done
+  } catch(e) {
+    appendLog('Erro ao iniciar autenticação: ' + e.message);
+    btn.disabled = false;
+    btn.textContent = '🔑 YouTube';
+  }
 }
 
 async function shutdownApp() {
@@ -1387,6 +1413,34 @@ async def api_pick_image():
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(None, _pick_image_sync)
     return JSONResponse(result)
+
+
+@app.post("/api/reauth-youtube")
+async def api_reauth_youtube():
+    global _worker
+    if _worker and _worker.is_alive():
+        return JSONResponse(
+            {"error": "Pipeline em execução. Aguarde o término antes de re-autenticar."},
+            status_code=409,
+        )
+
+    token_path = Path("youtube_token.json")
+    if token_path.exists():
+        token_path.unlink()
+
+    def _auth_thread():
+        try:
+            manager.send({"type": "log", "msg": "Abrindo navegador para autenticação YouTube..."})
+            from youtube_uploader import _autenticar
+            _autenticar()
+            manager.send({"type": "log", "msg": "Token YouTube renovado com sucesso!"})
+            manager.send({"type": "reauth_done", "ok": True})
+        except Exception as e:
+            manager.send({"type": "log", "msg": f"Erro na autenticação: {e}"})
+            manager.send({"type": "reauth_done", "ok": False})
+
+    threading.Thread(target=_auth_thread, daemon=True).start()
+    return {"ok": True}
 
 
 @app.post("/api/shutdown")
