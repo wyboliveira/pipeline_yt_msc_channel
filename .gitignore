@@ -2,6 +2,7 @@
 .env
 client_secret.json
 youtube_token.json
+pinterest_token.json
 
 # — Arquivos de áudio e vídeo (conteúdo do usuário) —
 *.mp3
