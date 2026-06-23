@@ -132,6 +132,7 @@ input::placeholder, textarea::placeholder { color:#4A5568; }
 <div style="background:#151829; border-bottom:1px solid #252D48; padding:10px 18px; display:flex; align-items:center; gap:10px; flex-shrink:0;">
   <span style="color:#7B5CF0;font-weight:900;font-size:13px;letter-spacing:.14em;">OVXRNIGHT</span>
   <span style="color:#E2E8F0;font-weight:700;font-size:15px;flex:1;">Control Center</span>
+  <button id="btn-pinterest" class="btn btn-neutral" style="height:28px;padding:0 12px;font-size:12px;" onclick="flushPinterest()" title="Arquivar imagens de assets/images no Pinterest e limpar a pasta">📌 Pinterest</button>
   <button id="btn-reauth" class="btn btn-neutral" style="height:28px;padding:0 12px;font-size:12px;" onclick="reauthYouTube()" title="Renovar autenticação do YouTube">🔑 YouTube</button>
   <button class="btn btn-neutral" style="height:28px;padding:0 12px;font-size:12px;" onclick="shutdownApp()" title="Encerrar aplicação">⏻ Encerrar</button>
   <span id="ws-badge" class="badge" style="background:#0D2318;color:#22C55E;font-size:11px;">● CONNECTED</span>
@@ -432,6 +433,10 @@ const handlers = {
     const btn = document.getElementById('btn-reauth');
     if (btn) { btn.disabled = false; btn.textContent = '🔑 YouTube'; }
   },
+  pinterest_done(m){
+    const btn = document.getElementById('btn-pinterest');
+    if (btn) { btn.disabled = false; btn.textContent = '📌 Pinterest'; }
+  },
 };
 
 // ── Log ────────────────────────────────────────────────────────────────────────
@@ -703,6 +708,27 @@ async function pickFile() {
   } catch(e) { /* ignore */ }
   btn.disabled = false;
   btn.textContent = '📂 Adicionar arquivo ao inbox';
+}
+
+async function flushPinterest() {
+  if (!confirm('Isso vai enviar as imagens de assets/images para o Pinterest e apagar as locais que forem enviadas com sucesso. Continuar?')) return;
+  const btn = document.getElementById('btn-pinterest');
+  btn.disabled = true;
+  btn.textContent = '⌛ Enviando...';
+  try {
+    const r = await fetch('/api/pinterest-flush', { method: 'POST' });
+    const d = await r.json();
+    if (d.error) {
+      appendLog('Erro: ' + d.error);
+      btn.disabled = false;
+      btn.textContent = '📌 Pinterest';
+    }
+    // sucesso: botão reativado pelo WebSocket pinterest_done
+  } catch(e) {
+    appendLog('Erro ao arquivar no Pinterest: ' + e.message);
+    btn.disabled = false;
+    btn.textContent = '📌 Pinterest';
+  }
 }
 
 async function reauthYouTube() {
@@ -1440,6 +1466,28 @@ async def api_reauth_youtube():
             manager.send({"type": "reauth_done", "ok": False})
 
     threading.Thread(target=_auth_thread, daemon=True).start()
+    return {"ok": True}
+
+
+@app.post("/api/pinterest-flush")
+async def api_pinterest_flush():
+    global _worker
+    if _worker and _worker.is_alive():
+        return JSONResponse(
+            {"error": "Pipeline em execução. Aguarde o término antes de arquivar."},
+            status_code=409,
+        )
+
+    def _flush_thread():
+        try:
+            from pinterest_uploader import flush_assets
+            flush_assets(log=lambda m: manager.send({"type": "log", "msg": m}))
+        except Exception as e:
+            manager.send({"type": "log", "msg": f"Erro no arquivamento Pinterest: {e}"})
+        finally:
+            manager.send({"type": "pinterest_done", "ok": True})
+
+    threading.Thread(target=_flush_thread, daemon=True).start()
     return {"ok": True}
 
 

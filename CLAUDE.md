@@ -20,6 +20,7 @@
 | `ken_burns.py` | Efeito de vídeo via FFmpeg zoompan |
 | `metadata_generator.py` | Geração de título/descrição/tags (local, sem IA) |
 | `youtube_uploader.py` | Upload para YouTube Data API v3 com OAuth 2.0 |
+| `pinterest_uploader.py` | Arquiva imagens de `assets/images/` no Pinterest (API v5, OAuth 2.0) e limpa a pasta |
 | `tests/` | Suite pytest — um arquivo por módulo |
 | `pyproject.toml` | Configuração do pytest |
 
@@ -36,9 +37,10 @@
 
 ### Arquivos sensíveis (nunca commitar)
 
-- `.env` — `LEONARDO_API_KEY`
+- `.env` — `LEONARDO_API_KEY`, `PINTEREST_APP_ID`, `PINTEREST_APP_SECRET`, `PINTEREST_BOARD_ID`
 - `client_secret.json` — OAuth 2.0 do Google
 - `youtube_token.json` — token gerado na 1ª autorização
+- `pinterest_token.json` — token OAuth do Pinterest (gerado na 1ª autorização)
 
 ---
 
@@ -121,6 +123,8 @@ Paleta de cores definida no `tailwind.config`: `app`, `panel`, `card`, `inp`, `r
 | `/api/open-video` | POST | Abre vídeo específico no player padrão |
 | `/api/pick-file` | POST | Dialog nativo via PowerShell para adicionar áudio |
 | `/api/pick-image` | POST | Dialog nativo para escolher imagem — abre em `assets/images/`, copia para `processing/imagem_gerada.png` |
+| `/api/reauth-youtube` | POST | Apaga o token e refaz a autenticação OAuth do YouTube (thread + navegador) |
+| `/api/pinterest-flush` | POST | Sobe imagens de `assets/images/` para o Pinterest e limpa as enviadas (thread, logs via WebSocket) |
 | `/api/shutdown` | POST | Encerra o servidor |
 
 ---
